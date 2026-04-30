@@ -17,15 +17,20 @@ wakes when sessions start, gets visibly impatient when an approval prompt is
 waiting, and lets you approve or deny right from the device.
 
 <p align="center">
-  <img src="docs/device.jpg" alt="M5StickC Plus running the buddy firmware" width="500">
+  <img src="docs/device.jpg" alt="M5StickS3 running the buddy firmware" width="500">
 </p>
 
 ## Hardware
 
-The firmware targets ESP32 with the Arduino framework. As written, it
-depends on the M5StickCPlus library for its display, IMU, and button
-drivers—so you'll need that board, or a fork that swaps those drivers for
-your own pin layout.
+The firmware targets ESP32 with the Arduino framework and supports the
+following boards:
+
+| Board | MCU | Display | Power | IMU |
+|---|---|---|---|---|
+| **M5StickS3** | ESP32-S3 | ST7789P3 135×240 | M5PM1 | BMI270 |
+| M5StickC Plus | ESP32 | ST7789V 135×240 | AXP192 | MPU6886 |
+
+The default build environment (`m5sticks3`) targets the M5StickS3.
 
 ## Flashing
 
@@ -34,13 +39,13 @@ Install
 then:
 
 ```bash
-pio run -t upload
+pio run -e m5sticks3 -t upload
 ```
 
 If you're starting from a previously-flashed device, wipe it first:
 
 ```bash
-pio run -t erase && pio run -t upload
+pio run -e m5sticks3 -t erase && pio run -e m5sticks3 -t upload
 ```
 
 Once running, you can also wipe everything from the device itself: **hold A
@@ -135,7 +140,7 @@ See `characters/bufo/` for a working example.
 
 If you're iterating on a character and would rather skip the BLE round-trip,
 `tools/flash_character.py characters/bufo` stages it into `data/` and runs
-`pio run -t uploadfs` directly over USB.
+`pio run -e m5sticks3 -t uploadfs` directly over USB.
 
 ## The seven states
 
