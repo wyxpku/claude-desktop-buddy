@@ -1,0 +1,32 @@
+{
+  "name": "clawd",
+  "colors": {
+    "body": "#DE886D",
+    "bg": "#000000",
+    "text": "#FFFFFF",
+    "textDim": "#808080",
+    "ink": "#000000"
+  },
+  "states": {
+    "sleep": "clawd-sleeping.gif",
+    "idle": ["clawd-idle.gif", "clawd-idle-reading.gif"],
+    "busy": [
+      "clawd-typing.gif",
+      "clawd-juggling.gif",
+      "clawd-thinking.gif",
+      "clawd-building.gif",
+      "clawd-sweeping.gif",
+      "clawd-carrying.gif",
+      "clawd-conducting.gif",
+      "clawd-debugger.gif"
+    ],
+    "attention": [
+      "clawd-notification.gif",
+      "clawd-react-double-jump.gif",
+      "clawd-react-annoyed.gif"
+    ],
+    "celebrate": "clawd-happy.gif",
+    "dizzy": "clawd-error.gif",
+    "heart": "clawd-happy.gif"
+  }
+}

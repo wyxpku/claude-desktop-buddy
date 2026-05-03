@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-Prep a character pack: downscale GIFs to 96px with a CONSISTENT crop
-across all states, so the character is the same size in every animation.
+Prep a character pack: downscale GIFs to 96px wide.
 Writes to characters/<name>/ ready to drag onto the Hardware Buddy window.
 
 Usage:
-  python3 tools/prep_character.py <character-dir-or-zip>
+  python3 tools/prep_character.py <character-dir-or-zip>      # global crop (default)
+  python3 tools/prep_character.py --tight <character-dir>      # per-animation tight crop
 """
 import json, sys, shutil, tempfile, zipfile
 from pathlib import Path
 from PIL import Image, ImageSequence
 
-TARGET_W = 96
-REF_W    = 1000   # normalize to this before computing the cross-state bbox
+TARGET_W = 130
+REF_W    = 1000   # normalize to this before computing the bbox
 PROJECT  = Path(__file__).resolve().parent.parent
 OUT_ROOT = PROJECT / "characters"
 
@@ -35,6 +35,14 @@ def _union(a, b):
     return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
 
 
+def _bbox_for_frames(frames):
+    """Compute a single bbox that covers all frames of one animation."""
+    bbox = None
+    for f in frames:
+        bbox = _union(bbox, f.getbbox())
+    return bbox
+
+
 def _save_state(frames, durations, dst: Path, bbox, bg_rgb):
     out = []
     for f in frames:
@@ -44,7 +52,7 @@ def _save_state(frames, durations, dst: Path, bbox, bg_rgb):
         resized = cropped.resize((TARGET_W, new_h), Image.LANCZOS)
         flat = Image.new("RGB", resized.size, bg_rgb)
         flat.paste(resized, mask=resized.split()[-1])
-        out.append(flat.convert("P", palette=Image.ADAPTIVE, colors=64))
+        out.append(flat.convert("P", palette=Image.ADAPTIVE, colors=32))
     out[0].save(
         dst, save_all=True, append_images=out[1:],
         duration=durations, loop=0, optimize=False, disposal=1,
@@ -52,7 +60,7 @@ def _save_state(frames, durations, dst: Path, bbox, bg_rgb):
     return dst.stat().st_size
 
 
-def install(src: Path) -> None:
+def install(src: Path, tight: bool = False) -> None:
     if src.suffix == ".zip":
         tmp = Path(tempfile.mkdtemp())
         with zipfile.ZipFile(src) as z:
@@ -67,9 +75,8 @@ def install(src: Path) -> None:
     bg_hex = manifest.get("colors", {}).get("bg", "#000000").lstrip("#")
     bg_rgb = tuple(int(bg_hex[i:i+2], 16) for i in (0, 2, 4))
 
-    # Pass 1: load every state (single or list), normalize, compute one bbox across all
+    # Pass 1: load every state (single or list), normalize
     loaded = []   # (out_name, state_key, frames, durations, src_bytes)
-    global_bbox = None
     for state, cfg in manifest["states"].items():
         entries = cfg if isinstance(cfg, list) else [cfg]
         for i, entry in enumerate(entries):
@@ -80,12 +87,23 @@ def install(src: Path) -> None:
             frames, durations = _load_normalized(gif_src)
             out_name = f"{state}_{i}.gif" if len(entries) > 1 else f"{state}.gif"
             loaded.append((out_name, state, frames, durations, gif_src.stat().st_size))
+
+    if tight:
+        # Per-animation tight crop: each GIF gets its own bbox
+        bboxes = []
+        for _, _, frames, _, _ in loaded:
+            bboxes.append(_bbox_for_frames(frames))
+        print("  tight crop: per-animation bounding boxes")
+    else:
+        # Global crop: one bbox across all animations for consistent sizing
+        global_bbox = None
+        for _, _, frames, _, _ in loaded:
             for f in frames:
                 global_bbox = _union(global_bbox, f.getbbox())
-
-    cw, ch = global_bbox[2] - global_bbox[0], global_bbox[3] - global_bbox[1]
-    out_h = round(ch * TARGET_W / cw)
-    print(f"  global crop: {global_bbox} from {REF_W}-wide reference -> {TARGET_W}x{out_h} on device\n")
+        cw, ch = global_bbox[2] - global_bbox[0], global_bbox[3] - global_bbox[1]
+        out_h = round(ch * TARGET_W / cw)
+        print(f"  global crop: {global_bbox} from {REF_W}-wide reference -> {TARGET_W}x{out_h} on device\n")
+        bboxes = [global_bbox] * len(loaded)
 
     # Pass 2: write
     out = OUT_ROOT / name
@@ -94,12 +112,14 @@ def install(src: Path) -> None:
     out.mkdir(parents=True)
 
     device_states, total = {}, 0
-    for out_name, state, frames, durations, src_bytes in loaded:
+    for (out_name, state, frames, durations, src_bytes), bbox in zip(loaded, bboxes):
         dst = out / out_name
-        after = _save_state(frames, durations, dst, global_bbox, bg_rgb)
+        after = _save_state(frames, durations, dst, bbox, bg_rgb)
         total += after
         device_states.setdefault(state, []).append(out_name)
-        print(f"  {out_name:14s} {src_bytes:>10,}b -> {after:>7,}b  ({len(frames)} frames)")
+        cw, ch = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        out_h = max(1, round(ch * TARGET_W / cw))
+        print(f"  {out_name:14s} {src_bytes:>10,}b -> {after:>7,}b  ({len(frames)} frames) {TARGET_W}x{out_h}")
     # Collapse single-entry lists back to strings for the common case
     device_states = {k: (v[0] if len(v) == 1 else v) for k, v in device_states.items()}
 
@@ -125,6 +145,11 @@ def install(src: Path) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    tight = False
+    args = sys.argv[1:]
+    if "--tight" in args:
+        tight = True
+        args.remove("--tight")
+    if len(args) != 1:
         sys.exit(__doc__)
-    install(Path(sys.argv[1]))
+    install(Path(args[0]).resolve(), tight=tight)

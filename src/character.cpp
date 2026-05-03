@@ -86,7 +86,7 @@ static int32_t gifSeekCb(GIFFILE* pFile, int32_t iPosition) {
   return pFile->iPos;
 }
 
-// --- Draw callback: one scanline → line buffer → pushImage ------------
+// --- Draw callback: scanline → target surface ---------------------------
 
 static void gifDrawCb(GIFDRAW* d) {
   uint16_t* pal16 = d->pPalette;
