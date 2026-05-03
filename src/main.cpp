@@ -1117,12 +1117,17 @@ void loop() {
     }
   }
 
-  // Charging clock
+  // Charging clock — debounce _onUsb to prevent rapid clock/HUD flicker
   clockRefreshRtc();
+  static bool stableUsb = false;
+  static uint8_t usbDebounce = 0;
+  if (_onUsb != stableUsb) { if (++usbDebounce >= 5) { stableUsb = _onUsb; usbDebounce = 0; } }
+  else usbDebounce = 0;
+
   bool clocking = displayMode == DISP_NORMAL
                && !menuOpen && !settingsOpen && !resetOpen && !inPrompt
                && tama.sessionsRunning == 0 && tama.sessionsWaiting == 0
-               && dataRtcValid() && _onUsb;
+               && dataRtcValid() && stableUsb;
   if (clocking) clockUpdateOrient();
   else { clockOrient = 0; orientFrames = 0; paintedOrient = 0; }
   bool landscapeClock = clocking && clockOrient != 0;
@@ -1154,13 +1159,8 @@ void loop() {
 
   static uint32_t lastPasskey = 0;
   uint32_t pk = blePasskey();
-  if (pk != lastPasskey) {
-    Serial.printf("[diag] passkey %lu->%lu conn=%d sec=%d\n",
-      (unsigned long)lastPasskey, (unsigned long)pk,
-      bleConnected(), bleSecure());
-    if (pk && !lastPasskey) { wake(); beep(1800, 60); }
-    lastPasskey = pk;
-  }
+  if (pk && !lastPasskey) { wake(); beep(1800, 60); }
+  lastPasskey = pk;
 
   if (napping || screenOff || landscapeClock) {
     // skip sprite render
@@ -1228,7 +1228,6 @@ void loop() {
   // Auto screen off (not on USB)
   if (!screenOff && !inPrompt && !_onUsb
       && millis() - lastInteractMs > SCREEN_OFF_MS) {
-    Serial.println("[diag] screen off (idle timeout)");
     M5.Display.sleep();
     screenOff = true;
   }
