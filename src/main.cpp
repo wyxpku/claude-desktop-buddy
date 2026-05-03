@@ -648,28 +648,26 @@ static int charPx(uint8_t byteLen) {
 static uint8_t wrapInto(const char* in, char out[][36], uint8_t maxRows, uint8_t width) {
   const int maxPx = W - 8;
   uint8_t row = 0, col = 0;
-  int px = 0;  // accumulated pixel width
+  int px = 0;
   const char* p = in;
   while (*p && row < maxRows) {
-    // space at word boundary
     if (*p == ' ' && col > 0) {
-      p++;
-      const char* w = p;
+      // Look ahead: measure next word to decide whether to keep or discard the space
+      const char* wp = p + 1;
       int wpx = 0;
-      while (*p && *p != ' ') { uint8_t bl; utf8cp(p, bl); wpx += charPx(bl); p += bl ? bl : 1; }
-      uint8_t wlen = p - w;
-      if (col + 1 + wlen >= 36 || px + charPx(1) + wpx > maxPx) {
+      while (*wp && *wp != ' ') {
+        uint8_t bl; utf8cp(wp, bl); wpx += charPx(bl); wp += bl ? bl : 1;
+      }
+      if (px + charPx(1) + wpx > maxPx) {
         out[row][col] = 0;
         if (++row >= maxRows) return row;
         col = 0; px = 0;
       } else {
         out[row][col++] = ' '; px += charPx(1);
       }
-      memcpy(&out[row][col], w, wlen); col += wlen; px += wpx;
-      out[row][col] = 0;
+      p++;  // skip space; word chars are handled by the char-by-char path below
       continue;
     }
-    // one UTF-8 codepoint
     uint8_t bl;
     utf8cp(p, bl);
     if (bl == 0) break;
@@ -873,7 +871,7 @@ void drawPet() {
 void drawHUD() {
   if (tama.promptId[0]) { drawApproval(); return; }
   const Palette& p = characterPalette();
-  const int SHOW = 3, LH = FH, WIDTH = CHARS_PER_LINE;
+  const int SHOW = 8, LH = FH, WIDTH = CHARS_PER_LINE;
   const int AREA = SHOW * LH + 4;
   spr.fillRect(0, H - AREA, W, AREA, p.bg);
   spr.setTextSize(1);
@@ -1156,8 +1154,13 @@ void loop() {
 
   static uint32_t lastPasskey = 0;
   uint32_t pk = blePasskey();
-  if (pk && !lastPasskey) { wake(); beep(1800, 60); }
-  lastPasskey = pk;
+  if (pk != lastPasskey) {
+    Serial.printf("[diag] passkey %lu->%lu conn=%d sec=%d\n",
+      (unsigned long)lastPasskey, (unsigned long)pk,
+      bleConnected(), bleSecure());
+    if (pk && !lastPasskey) { wake(); beep(1800, 60); }
+    lastPasskey = pk;
+  }
 
   if (napping || screenOff || landscapeClock) {
     // skip sprite render
@@ -1225,6 +1228,7 @@ void loop() {
   // Auto screen off (not on USB)
   if (!screenOff && !inPrompt && !_onUsb
       && millis() - lastInteractMs > SCREEN_OFF_MS) {
+    Serial.println("[diag] screen off (idle timeout)");
     M5.Display.sleep();
     screenOff = true;
   }
