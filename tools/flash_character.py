@@ -31,8 +31,8 @@ def flash(src: Path) -> None:
     shutil.copytree(src, dst)
     print(f"staged {name}: {total:,} bytes -> {dst}")
 
-    subprocess.run(["pio", "run", "-t", "uploadfs"], cwd=PROJECT, check=True)
-    print(f"\nflashed. on the stick: hold A -> settings -> species -> GIF")
+    subprocess.run([sys.executable, "-m", "platformio", "run", "-t", "uploadfs"], cwd=PROJECT, check=True)
+    print(f"\nflashed. on the stick: hold A -> settings -> ascii pet -> cycle to GIF")
 
 
 if __name__ == "__main__":

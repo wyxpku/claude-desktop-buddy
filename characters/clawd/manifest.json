@@ -1,0 +1,35 @@
+{
+  "name": "clawd",
+  "colors": {
+    "body": "#DE886D",
+    "bg": "#000000",
+    "text": "#FFFFFF",
+    "textDim": "#808080",
+    "ink": "#000000"
+  },
+  "states": {
+    "sleep": "sleep.gif",
+    "idle": [
+      "idle_0.gif",
+      "idle_1.gif"
+    ],
+    "busy": [
+      "busy_0.gif",
+      "busy_1.gif",
+      "busy_2.gif",
+      "busy_3.gif",
+      "busy_4.gif",
+      "busy_5.gif",
+      "busy_6.gif",
+      "busy_7.gif"
+    ],
+    "attention": [
+      "attention_0.gif",
+      "attention_1.gif",
+      "attention_2.gif"
+    ],
+    "celebrate": "celebrate.gif",
+    "dizzy": "dizzy.gif",
+    "heart": "heart.gif"
+  }
+}
