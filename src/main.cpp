@@ -640,51 +640,48 @@ static uint8_t utf8cp(const char* p, uint8_t& bytes) {
   return bytes;
 }
 
+// Estimate pixel width of a UTF-8 codepoint (avoids calling textWidth per char)
+static int charPx(uint8_t byteLen) {
+  return byteLen == 1 ? 8 : 12;  // ASCII ~8px, CJK/wide ~12px
+}
+
 static uint8_t wrapInto(const char* in, char out[][36], uint8_t maxRows, uint8_t width) {
+  const int maxPx = W - 8;
   uint8_t row = 0, col = 0;
+  int px = 0;  // accumulated pixel width
   const char* p = in;
   while (*p && row < maxRows) {
-    // skip spaces at word boundary
+    // space at word boundary
     if (*p == ' ' && col > 0) {
       p++;
-      // find extent of next word (till space/end)
       const char* w = p;
-      while (*p && *p != ' ') { uint8_t bl; utf8cp(p, bl); p += bl ? bl : 1; }
+      int wpx = 0;
+      while (*p && *p != ' ') { uint8_t bl; utf8cp(p, bl); wpx += charPx(bl); p += bl ? bl : 1; }
       uint8_t wlen = p - w;
-      // measure word pixel width
-      char tmp[36]; memcpy(tmp, w, wlen); tmp[wlen] = 0;
-      int wpx = spr.textWidth(tmp);
-      if (col + 1 + wlen >= 36 || spr.textWidth(out[row]) + spr.textWidth(" ") + wpx > W - 8) {
+      if (col + 1 + wlen >= 36 || px + charPx(1) + wpx > maxPx) {
         out[row][col] = 0;
         if (++row >= maxRows) return row;
-        col = 0;
+        col = 0; px = 0;
       } else {
-        out[row][col++] = ' ';
+        out[row][col++] = ' '; px += charPx(1);
       }
-      memcpy(&out[row][col], w, wlen); col += wlen;
+      memcpy(&out[row][col], w, wlen); col += wlen; px += wpx;
       out[row][col] = 0;
       continue;
     }
-    // copy one UTF-8 codepoint
+    // one UTF-8 codepoint
     uint8_t bl;
     utf8cp(p, bl);
     if (bl == 0) break;
-    if (col + bl >= 36) {
+    int cpx = charPx(bl);
+    if (col + bl >= 36 || (col > 0 && px + cpx > maxPx)) {
       out[row][col] = 0;
       if (++row >= maxRows) return row;
-      col = 0;
+      col = 0; px = 0;
     }
     memcpy(&out[row][col], p, bl);
-    col += bl;
+    col += bl; px += cpx;
     out[row][col] = 0;
-    // check pixel width, break if over
-    if (spr.textWidth(out[row]) > W - 8) {
-      // backtrack this codepoint to next line
-      col -= bl;
-      out[row][col] = 0;
-      if (col == 0) { memcpy(&out[row][col], p, bl); col += bl; out[row][col] = 0; p += bl; }
-      else { if (++row >= maxRows) return row; col = 0; continue; }
-    }
     p += bl;
   }
   if (col > 0 && row < maxRows) { out[row][col] = 0; row++; }
@@ -709,28 +706,24 @@ static void drawApproval() {
 
   spr.setTextColor(p.textDim, p.bg);
   int y = H - AREA + 4 + FH * 2;
-  // print hint text, breaking into two lines by pixel width
+  // print hint text, breaking into two lines by estimated pixel width
   const char* h = tama.promptHint;
   const int maxPx = W - 8;
   const char* start = h;
   for (int line = 0; line < 2 && *start; line++) {
-    const char* best = start;
-    char tmp[44];
-    // walk codepoints, track last position that fits
-    const char* p2 = start;
-    while (*p2) {
-      uint8_t bl; utf8cp(p2, bl); if (!bl) break;
-      int len = p2 + bl - start;
-      memcpy(tmp, start, len); tmp[len] = 0;
-      if (spr.textWidth(tmp) > maxPx) break;
-      best = p2 + bl;
-      p2 += bl;
+    int px = 0;
+    const char* end = start;
+    while (*end) {
+      uint8_t bl; utf8cp(end, bl); if (!bl) break;
+      int cpx = charPx(bl);
+      if (px + cpx > maxPx) break;
+      px += cpx;
+      end += bl;
     }
-    int take = best - start;
-    if (take == 0 && *p2) { uint8_t bl; utf8cp(p2, bl); take = bl ? bl : 1; }
-    memcpy(tmp, start, take); tmp[take] = 0;
+    int take = end - start;
+    if (take == 0 && *end) { uint8_t bl; utf8cp(end, bl); take = bl ? bl : 1; }
     spr.setCursor(4, y + line * FH);
-    spr.print(tmp);
+    spr.printf("%.*s", take, start);
     start += take;
   }
 
