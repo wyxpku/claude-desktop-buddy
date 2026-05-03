@@ -3,6 +3,8 @@
 #include <M5Unified.h>
 #include <string.h>
 
+using namespace lgfx::fonts;
+
 extern M5Canvas spr;
 
 // Mirrors PersonaState in main.cpp
@@ -147,8 +149,10 @@ void buddyRenderTo(lgfx::v1::LGFXBase* tgt, uint8_t personaState) {
   if ((int32_t)(now - nextTickAt) >= 0) { nextTickAt = now + TICK_MS; tickCount++; }
   lgfx::v1::LGFXBase* prev = _tgt;
   _tgt = tgt;
+  _tgt->setFont(&Font0);
   const Species* sp = SPECIES_TABLE[currentSpeciesIdx];
   if (sp->states[personaState]) sp->states[personaState](tickCount);
+  _tgt->setFont(&efontCN_12);
   _tgt = prev; _scale = prevS;
 }
 
@@ -172,6 +176,8 @@ void buddyTick(uint8_t personaState) {
   spr.fillRect(0, 0, BUDDY_CANVAS_W,
                (BUDDY_Y_BASE + 5 * BUDDY_CHAR_H + 12) * _scale, BUDDY_BG);
 
+  spr.setFont(&Font0);
   const Species* sp = SPECIES_TABLE[currentSpeciesIdx];
   if (sp->states[personaState]) sp->states[personaState](tickCount);
+  spr.setFont(&efontCN_12);
 }

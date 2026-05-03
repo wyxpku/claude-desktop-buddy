@@ -5,6 +5,8 @@
 #include "data.h"
 #include "buddy.h"
 
+using namespace lgfx::fonts;
+
 M5Canvas spr(&M5.Display);
 
 // Advertise as "Claude-XXXX" (last two BT MAC bytes) so multiple sticks
@@ -23,6 +25,9 @@ static void startBt() {
 const int W = 135, H = 240;
 const int CX = W / 2;
 const int CY_BASE = 120;
+const int FH = 12;         // font height (efontCN_12)
+const int FW = 12;         // approximate font width
+const int CHARS_PER_LINE = 11;  // W / FW
 
 // Colors used across multiple UI surfaces
 const uint16_t HOT   = 0xFA20;   // red-orange: warnings, impatience, deny
@@ -222,17 +227,17 @@ static void drawMenuHints(const Palette& p, int mx, int mw, int hy,
   spr.setTextColor(p.textDim, PANEL);
   int x = mx + 8;
   spr.setCursor(x, hy); spr.print(downLbl);
-  x += strlen(downLbl) * 6 + 4;
+  x += spr.textWidth(downLbl) + 4;
   spr.fillTriangle(x, hy + 1, x + 6, hy + 1, x + 3, hy + 6, p.textDim);
   x = mx + mw / 2 + 4;
   spr.setCursor(x, hy); spr.print(rightLbl);
-  x += strlen(rightLbl) * 6 + 4;
+  x += spr.textWidth(rightLbl) + 4;
   spr.fillTriangle(x, hy, x, hy + 6, x + 5, hy + 3, p.textDim);
 }
 
 static void drawSettings() {
   const Palette& p = characterPalette();
-  int mw = 118, mh = 16 + SETTINGS_N * 14 + MENU_HINT_H;
+  int mw = 118, mh = 16 + SETTINGS_N * FH + MENU_HINT_H;
   int mx = (W - mw) / 2, my = (H - mh) / 2;
   spr.fillRoundRect(mx, my, mw, mh, 4, PANEL);
   spr.drawRoundRect(mx, my, mw, mh, 4, p.textDim);
@@ -242,10 +247,10 @@ static void drawSettings() {
   for (int i = 0; i < SETTINGS_N; i++) {
     bool sel = (i == settingsSel);
     spr.setTextColor(sel ? p.text : p.textDim, PANEL);
-    spr.setCursor(mx + 6, my + 8 + i * 14);
+    spr.setCursor(mx + 6, my + 8 + i * FH);
     spr.print(sel ? "> " : "  ");
     spr.print(settingsItems[i]);
-    spr.setCursor(mx + mw - 36, my + 8 + i * 14);
+    spr.setCursor(mx + mw - 36, my + 8 + i * FH);
     spr.setTextColor(p.textDim, PANEL);
     if (i == 0) {
       spr.printf("%u/4", brightLevel);
@@ -266,7 +271,7 @@ static void drawSettings() {
 
 static void drawReset() {
   const Palette& p = characterPalette();
-  int mw = 118, mh = 16 + RESET_N * 14 + MENU_HINT_H;
+  int mw = 118, mh = 16 + RESET_N * FH + MENU_HINT_H;
   int mx = (W - mw) / 2, my = (H - mh) / 2;
   spr.fillRoundRect(mx, my, mw, mh, 4, PANEL);
   spr.drawRoundRect(mx, my, mw, mh, 4, HOT);
@@ -274,7 +279,7 @@ static void drawReset() {
   for (int i = 0; i < RESET_N; i++) {
     bool sel = (i == resetSel);
     spr.setTextColor(sel ? p.text : p.textDim, PANEL);
-    spr.setCursor(mx + 6, my + 8 + i * 14);
+    spr.setCursor(mx + 6, my + 8 + i * FH);
     spr.print(sel ? "> " : "  ");
     bool armed = (i == resetConfirmIdx) &&
                  (int32_t)(millis() - resetConfirmUntil) < 0;
@@ -303,7 +308,7 @@ void menuConfirm() {
 
 void drawMenu() {
   const Palette& p = characterPalette();
-  int mw = 118, mh = 16 + MENU_N * 14 + MENU_HINT_H;
+  int mw = 118, mh = 16 + MENU_N * FH + MENU_HINT_H;
   int mx = (W - mw) / 2, my = (H - mh) / 2;
   spr.fillRoundRect(mx, my, mw, mh, 4, PANEL);
   spr.drawRoundRect(mx, my, mw, mh, 4, p.textDim);
@@ -311,7 +316,7 @@ void drawMenu() {
   for (int i = 0; i < MENU_N; i++) {
     bool sel = (i == menuSel);
     spr.setTextColor(sel ? p.text : p.textDim, PANEL);
-    spr.setCursor(mx + 6, my + 8 + i * 14);
+    spr.setCursor(mx + 6, my + 8 + i * FH);
     spr.print(sel ? "> " : "  ");
     spr.print(menuItems[i]);
     if (i == 4) spr.print(dataDemo() ? "  on" : "  off");
@@ -385,14 +390,15 @@ static void drawClock() {
     paintedOrient = 0;
     spr.fillRect(0, 90, W, H - 90, p.bg);
     spr.setTextDatum(MC_DATUM);
-    spr.setTextSize(4); spr.setTextColor(p.text, p.bg);    spr.drawString(hm, CX, 140);
-    spr.setTextSize(2); spr.setTextColor(p.textDim, p.bg); spr.drawString(ss, CX, 175);
-    spr.setTextSize(1);                                     spr.drawString(dl, CX, 200);
+    spr.setTextSize(3); spr.setTextColor(p.text, p.bg);    spr.drawString(hm, CX, 140);
+    spr.setTextSize(1); spr.setTextColor(p.textDim, p.bg); spr.drawString(ss, CX, 170);
+                                                         spr.drawString(dl, CX, 190);
     spr.setTextDatum(TL_DATUM);
     return;
   }
 
   M5.Display.setRotation(clockOrient);
+  M5.Display.setFont(&efontCN_12);
   static uint8_t lastSec = 0xFF;
   bool repaint = paintedOrient != clockOrient;
   if (repaint) { M5.Display.fillScreen(p.bg); paintedOrient = clockOrient; lastSec = 0xFF; }
@@ -402,11 +408,10 @@ static void drawClock() {
     char wdl[12]; snprintf(wdl, sizeof(wdl), "%s %s %02u", DOW[clockDow()], MON[mi], _clkDt.date);
     char ssl[3]; snprintf(ssl, sizeof(ssl), "%02u", _clkTm.seconds);
     M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.setTextSize(3); M5.Display.setTextColor(p.text, p.bg);    M5.Display.drawString(hm, 170, 42);
-    M5.Display.setTextSize(2); M5.Display.setTextColor(p.textDim, p.bg); M5.Display.drawString(ssl, 170, 72);
+    M5.Display.setTextSize(2); M5.Display.setTextColor(p.text, p.bg);    M5.Display.drawString(hm, 170, 42);
+    M5.Display.setTextSize(1); M5.Display.setTextColor(p.textDim, p.bg); M5.Display.drawString(ssl, 170, 72);
                                                                           M5.Display.drawString(wdl, 170, 102);
     M5.Display.setTextDatum(TL_DATUM);
-    M5.Display.setTextSize(1);
   }
 
   static uint32_t lastPetTick = 0;
@@ -452,7 +457,7 @@ static void _infoHeader(const Palette& p, int& y, const char* section, uint8_t p
   spr.setTextColor(p.text, p.bg);
   spr.setCursor(4, y); spr.print("Info");
   spr.setTextColor(p.textDim, p.bg);
-  spr.setCursor(W - 28, y); spr.printf("%u/%u", page + 1, INFO_PAGES);
+  spr.setCursor(W - 36, y); spr.printf("%u/%u", page + 1, INFO_PAGES);
   y += 12;
   spr.setTextColor(p.body, p.bg);
   spr.setCursor(4, y); spr.print(section);
@@ -462,14 +467,13 @@ static void _infoHeader(const Palette& p, int& y, const char* section, uint8_t p
 void drawPasskey() {
   const Palette& p = characterPalette();
   spr.fillSprite(p.bg);
-  spr.setTextSize(1);
   spr.setTextColor(p.textDim, p.bg);
   spr.setCursor(8, 56);  spr.print("BLUETOOTH PAIRING");
   spr.setCursor(8, 184); spr.print("enter on desktop:");
-  spr.setTextSize(3);
   spr.setTextColor(p.text, p.bg);
   char b[8]; snprintf(b, sizeof(b), "%06lu", (unsigned long)blePasskey());
-  spr.setCursor((W - 18 * 6) / 2, 110);
+  int tw = spr.textWidth(b);
+  spr.setCursor((W - tw) / 2, 110);
   spr.print(b);
 }
 
@@ -481,7 +485,7 @@ void drawInfo() {
   int y = TOP + 2;
   auto ln = [&](const char* fmt, ...) {
     char b[32]; va_list a; va_start(a, fmt); vsnprintf(b, sizeof(b), fmt, a); va_end(a);
-    spr.setCursor(4, y); spr.print(b); y += 8;
+    spr.setCursor(4, y); spr.print(b); y += FH;
   };
 
   if (infoPage == 0) {
@@ -489,17 +493,17 @@ void drawInfo() {
     spr.setTextColor(p.textDim, p.bg);
     ln("I watch your Claude");
     ln("desktop sessions.");
-    y += 6;
+    y += 4;
     ln("I sleep when nothing's");
     ln("happening, wake when");
     ln("you start working,");
     ln("get impatient when");
     ln("approvals pile up.");
-    y += 6;
+    y += 4;
     spr.setTextColor(p.text, p.bg);
     ln("Press A on a prompt");
     ln("to approve from here.");
-    y += 6;
+    y += 4;
     spr.setTextColor(p.textDim, p.bg);
     ln("18 species. Settings");
     ln("> ascii pet to cycle.");
@@ -508,15 +512,14 @@ void drawInfo() {
     _infoHeader(p, y, "BUTTONS", infoPage);
     spr.setTextColor(p.text, p.bg);    ln("A   front");
     spr.setTextColor(p.textDim, p.bg); ln("    next screen");
-    ln("    approve prompt"); y += 4;
+    ln("    approve prompt");
     spr.setTextColor(p.text, p.bg);    ln("B   right side");
     spr.setTextColor(p.textDim, p.bg); ln("    next page");
-    ln("    deny prompt"); y += 4;
+    ln("    deny prompt");
     spr.setTextColor(p.text, p.bg);    ln("hold A");
-    spr.setTextColor(p.textDim, p.bg); ln("    menu"); y += 4;
-    spr.setTextColor(p.text, p.bg);    ln("Power  left side");
-    spr.setTextColor(p.textDim, p.bg); ln("    tap = screen off");
-    ln("    hold = power off");
+    spr.setTextColor(p.textDim, p.bg); ln("    menu");
+    spr.setTextColor(p.text, p.bg);    ln("Power");
+    spr.setTextColor(p.textDim, p.bg); ln("    tap=off hold=pwr");
 
   } else if (infoPage == 2) {
     _infoHeader(p, y, "CLAUDE", infoPage);
@@ -546,19 +549,17 @@ void drawInfo() {
     bool full = usb && vBat_mV > 4100 && abs(iBat_mA) < 10;
 
     spr.setTextColor(p.text, p.bg);
-    spr.setTextSize(2);
     spr.setCursor(4, y);
     spr.printf("%d%%", pct);
-    spr.setTextSize(1);
     spr.setTextColor(full ? GREEN : (charging ? HOT : p.textDim), p.bg);
-    spr.setCursor(60, y + 4);
+    spr.setCursor(60, y);
     spr.print(full ? "full" : (charging ? "charging" : (usb ? "usb" : "battery")));
-    y += 20;
+    y += FH;
 
     spr.setTextColor(p.textDim, p.bg);
     ln("  battery  %d.%02dV", vBat_mV/1000, (abs(vBat_mV)%1000)/10);
     ln("  current  %+dmA", iBat_mA);
-    y += 8;
+    y += 4;
 
     spr.setTextColor(p.text, p.bg);
     ln("SYSTEM");
@@ -575,11 +576,9 @@ void drawInfo() {
     bool linked = settings().bt && dataBtActive();
 
     spr.setTextColor(linked ? GREEN : (settings().bt ? HOT : p.textDim), p.bg);
-    spr.setTextSize(2);
     spr.setCursor(4, y);
     spr.print(linked ? "linked" : (settings().bt ? "discover" : "off"));
-    spr.setTextSize(1);
-    y += 20;
+    y += FH;
 
     spr.setTextColor(p.textDim, p.bg);
     spr.setTextColor(p.text, p.bg);
@@ -629,31 +628,64 @@ void drawInfo() {
 }
 
 
-static uint8_t wrapInto(const char* in, char out[][24], uint8_t maxRows, uint8_t width) {
+// Advance past one UTF-8 codepoint, return its byte length
+static uint8_t utf8cp(const char* p, uint8_t& bytes) {
+  uint8_t b = *p;
+  if (b == 0) { bytes = 0; return 0; }
+  if (b < 0x80) { bytes = 1; }
+  else if ((b & 0xE0) == 0xC0) { bytes = 2; }
+  else if ((b & 0xF0) == 0xE0) { bytes = 3; }
+  else if ((b & 0xF8) == 0xF0) { bytes = 4; }
+  else { bytes = 1; }
+  return bytes;
+}
+
+static uint8_t wrapInto(const char* in, char out[][36], uint8_t maxRows, uint8_t width) {
   uint8_t row = 0, col = 0;
   const char* p = in;
   while (*p && row < maxRows) {
-    while (*p == ' ') p++;
-    const char* w = p;
-    while (*p && *p != ' ') p++;
-    uint8_t wlen = p - w;
-    if (wlen == 0) break;
-    uint8_t need = (col > 0 ? 1 : 0) + wlen;
-    if (col + need > width) {
+    // skip spaces at word boundary
+    if (*p == ' ' && col > 0) {
+      p++;
+      // find extent of next word (till space/end)
+      const char* w = p;
+      while (*p && *p != ' ') { uint8_t bl; utf8cp(p, bl); p += bl ? bl : 1; }
+      uint8_t wlen = p - w;
+      // measure word pixel width
+      char tmp[36]; memcpy(tmp, w, wlen); tmp[wlen] = 0;
+      int wpx = spr.textWidth(tmp);
+      if (col + 1 + wlen >= 36 || spr.textWidth(out[row]) + spr.textWidth(" ") + wpx > W - 8) {
+        out[row][col] = 0;
+        if (++row >= maxRows) return row;
+        col = 0;
+      } else {
+        out[row][col++] = ' ';
+      }
+      memcpy(&out[row][col], w, wlen); col += wlen;
+      out[row][col] = 0;
+      continue;
+    }
+    // copy one UTF-8 codepoint
+    uint8_t bl;
+    utf8cp(p, bl);
+    if (bl == 0) break;
+    if (col + bl >= 36) {
       out[row][col] = 0;
       if (++row >= maxRows) return row;
-      out[row][0] = ' '; col = 1;
+      col = 0;
     }
-    if (col > 1 || (col == 1 && out[row][0] != ' ')) out[row][col++] = ' ';
-    else if (col == 1 && row > 0) {}
-    while (wlen > width - col) {
-      uint8_t take = width - col;
-      memcpy(&out[row][col], w, take); col += take; w += take; wlen -= take;
+    memcpy(&out[row][col], p, bl);
+    col += bl;
+    out[row][col] = 0;
+    // check pixel width, break if over
+    if (spr.textWidth(out[row]) > W - 8) {
+      // backtrack this codepoint to next line
+      col -= bl;
       out[row][col] = 0;
-      if (++row >= maxRows) return row;
-      out[row][0] = ' '; col = 1;
+      if (col == 0) { memcpy(&out[row][col], p, bl); col += bl; out[row][col] = 0; p += bl; }
+      else { if (++row >= maxRows) return row; col = 0; continue; }
     }
-    memcpy(&out[row][col], w, wlen); col += wlen;
+    p += bl;
   }
   if (col > 0 && row < maxRows) { out[row][col] = 0; row++; }
   return row;
@@ -661,44 +693,58 @@ static uint8_t wrapInto(const char* in, char out[][24], uint8_t maxRows, uint8_t
 
 static void drawApproval() {
   const Palette& p = characterPalette();
-  const int AREA = 78;
+  const int AREA = FH * 5 + 8;
   spr.fillRect(0, H - AREA, W, AREA, p.bg);
   spr.drawFastHLine(0, H - AREA, W, p.textDim);
 
-  spr.setTextSize(1);
   spr.setTextColor(p.textDim, p.bg);
   spr.setCursor(4, H - AREA + 4);
   uint32_t waited = (millis() - promptArrivedMs) / 1000;
   if (waited >= 10) spr.setTextColor(HOT, p.bg);
   spr.printf("approve? %lus", (unsigned long)waited);
 
-  int toolLen = strlen(tama.promptTool);
   spr.setTextColor(p.text, p.bg);
-  spr.setTextSize(toolLen <= 10 ? 2 : 1);
-  spr.setCursor(4, H - AREA + (toolLen <= 10 ? 14 : 18));
+  spr.setCursor(4, H - AREA + 4 + FH);
   spr.print(tama.promptTool);
-  spr.setTextSize(1);
 
   spr.setTextColor(p.textDim, p.bg);
-  int hlen = strlen(tama.promptHint);
-  spr.setCursor(4, H - AREA + 34);
-  spr.printf("%.21s", tama.promptHint);
-  if (hlen > 21) {
-    spr.setCursor(4, H - AREA + 42);
-    spr.printf("%.21s", tama.promptHint + 21);
+  int y = H - AREA + 4 + FH * 2;
+  // print hint text, breaking into two lines by pixel width
+  const char* h = tama.promptHint;
+  const int maxPx = W - 8;
+  const char* start = h;
+  for (int line = 0; line < 2 && *start; line++) {
+    const char* best = start;
+    char tmp[44];
+    // walk codepoints, track last position that fits
+    const char* p2 = start;
+    while (*p2) {
+      uint8_t bl; utf8cp(p2, bl); if (!bl) break;
+      int len = p2 + bl - start;
+      memcpy(tmp, start, len); tmp[len] = 0;
+      if (spr.textWidth(tmp) > maxPx) break;
+      best = p2 + bl;
+      p2 += bl;
+    }
+    int take = best - start;
+    if (take == 0 && *p2) { uint8_t bl; utf8cp(p2, bl); take = bl ? bl : 1; }
+    memcpy(tmp, start, take); tmp[take] = 0;
+    spr.setCursor(4, y + line * FH);
+    spr.print(tmp);
+    start += take;
   }
 
   if (responseSent) {
     spr.setTextColor(p.textDim, p.bg);
-    spr.setCursor(4, H - 12);
+    spr.setCursor(4, H - FH - 2);
     spr.print("sent...");
   } else {
     spr.setTextColor(GREEN, p.bg);
-    spr.setCursor(4, H - 12);
-    spr.print("A: approve");
+    spr.setCursor(4, H - FH - 2);
+    spr.print("A: yes");
     spr.setTextColor(HOT, p.bg);
-    spr.setCursor(W - 48, H - 12);
-    spr.print("B: deny");
+    spr.setCursor(W - 36, H - FH - 2);
+    spr.print("B: no");
   }
 }
 
@@ -716,49 +762,56 @@ static void tinyHeart(int x, int y, bool filled, uint16_t col) {
 }
 
 static void drawPetStats(const Palette& p) {
-  const int TOP = 70;
+  const int TOP = 70 + FH;  // below pet name header
   spr.fillRect(0, TOP, W, H - TOP, p.bg);
   spr.setTextSize(1);
-  int y = TOP + 16;
+  int y = TOP + 4;
+  // y is the top of each row; text cursor goes at y, graphics centered at y + FH/2
+  auto textY = [](int rowY) -> int { return rowY; };
+  auto iconY = [](int rowY) -> int { return rowY + FH / 2; };
 
   spr.setTextColor(p.textDim, p.bg);
-  spr.setCursor(6, y - 2); spr.print("mood");
+  spr.setCursor(6, textY(y)); spr.print("mood");
   uint8_t mood = statsMoodTier();
   uint16_t moodCol = (mood >= 3) ? RED : (mood >= 2) ? HOT : p.textDim;
-  for (int i = 0; i < 4; i++) tinyHeart(54 + i * 16, y + 2, i < mood, moodCol);
+  int icy = iconY(y);
+  for (int i = 0; i < 4; i++) tinyHeart(54 + i * 16, icy, i < mood, moodCol);
 
-  y += 20;
-  spr.setCursor(6, y - 2); spr.print("fed");
+  y += FH + 4;
+  spr.setCursor(6, textY(y)); spr.print("fed");
   uint8_t fed = statsFedProgress();
+  icy = iconY(y);
   for (int i = 0; i < 10; i++) {
     int px = 38 + i * 9;
-    if (i < fed) spr.fillCircle(px, y + 1, 2, p.body);
-    else spr.drawCircle(px, y + 1, 2, p.textDim);
+    if (i < fed) spr.fillCircle(px, icy, 2, p.body);
+    else spr.drawCircle(px, icy, 2, p.textDim);
   }
 
-  y += 20;
-  spr.setCursor(6, y - 2); spr.print("energy");
+  y += FH + 4;
+  spr.setCursor(6, textY(y)); spr.print("energy");
   uint8_t en = statsEnergyTier();
   uint16_t enCol = (en >= 4) ? 0x07FF : (en >= 2) ? 0xFFE0 : HOT;
+  icy = iconY(y);
   for (int i = 0; i < 5; i++) {
     int px = 54 + i * 13;
-    if (i < en) spr.fillRect(px, y - 2, 9, 6, enCol);
-    else spr.drawRect(px, y - 2, 9, 6, p.textDim);
+    if (i < en) spr.fillRect(px, icy - 3, 9, 6, enCol);
+    else spr.drawRect(px, icy - 3, 9, 6, p.textDim);
   }
 
-  y += 24;
-  spr.fillRoundRect(6, y - 2, 42, 14, 3, p.body);
+  y += FH + 6;
+  int badgeH = FH + 4;
+  spr.fillRoundRect(6, y, 44, badgeH, 3, p.body);
   spr.setTextColor(p.bg, p.body);
-  spr.setCursor(11, y + 1); spr.printf("Lv %u", stats().level);
+  spr.setCursor(11, y + 2); spr.printf("Lv %u", stats().level);
 
-  y += 20;
+  y += badgeH + 6;
   spr.setTextColor(p.textDim, p.bg);
   spr.setCursor(6, y);
   spr.printf("approved %u", stats().approvals);
-  spr.setCursor(6, y + 10);
+  spr.setCursor(6, y + FH);
   spr.printf("denied   %u", stats().denials);
   uint32_t nap = stats().napSeconds;
-  spr.setCursor(6, y + 20);
+  spr.setCursor(6, y + FH * 2);
   spr.printf("napped   %luh%02lum", nap/3600, (nap/60)%60);
   auto tokFmt = [&](const char* label, uint32_t v, int yPx) {
     spr.setCursor(6, yPx);
@@ -766,21 +819,21 @@ static void drawPetStats(const Palette& p) {
     else if (v >= 1000) spr.printf("%s%lu.%luK", label, v/1000, (v/100)%10);
     else                spr.printf("%s%lu", label, v);
   };
-  tokFmt("tokens   ", stats().tokens, y + 30);
-  tokFmt("today    ", tama.tokensToday, y + 40);
+  tokFmt("tokens   ", stats().tokens, y + FH * 3);
+  tokFmt("today    ", tama.tokensToday, y + FH * 4);
 }
 
 static void drawPetHowTo(const Palette& p) {
-  const int TOP = 70;
+  const int TOP = 70 + FH;
   spr.fillRect(0, TOP, W, H - TOP, p.bg);
   spr.setTextSize(1);
   int y = TOP + 2;
   auto ln = [&](uint16_t c, const char* s) {
-    spr.setTextColor(c, p.bg); spr.setCursor(6, y); spr.print(s); y += 9;
+    spr.setTextColor(c, p.bg); spr.setCursor(6, y); spr.print(s); y += FH;
   };
   auto gap = [&]() { y += 4; };
 
-  y += 12;
+  y += FH;
 
   ln(p.body,    "MOOD");
   ln(p.textDim, " approve fast = up");
@@ -805,26 +858,29 @@ void drawPet() {
   const Palette& p = characterPalette();
   int y = 70;
 
-  if (petPage == 0) drawPetStats(p);
-  else drawPetHowTo(p);
-
+  // pet name header
+  spr.fillRect(0, y, W, FH, p.bg);
   spr.setTextSize(1);
   spr.setTextColor(p.text, p.bg);
-  spr.setCursor(4, y + 2);
+  spr.setCursor(4, y);
   if (ownerName()[0]) {
     spr.printf("%s's %s", ownerName(), petName());
   } else {
     spr.print(petName());
   }
   spr.setTextColor(p.textDim, p.bg);
-  spr.setCursor(W - 28, y + 2);
-  spr.printf("%u/%u", petPage + 1, PET_PAGES);
+  char pg[8]; snprintf(pg, sizeof(pg), "%u/%u", petPage + 1, PET_PAGES);
+  spr.setCursor(W - spr.textWidth(pg) - 4, y);
+  spr.print(pg);
+
+  if (petPage == 0) drawPetStats(p);
+  else drawPetHowTo(p);
 }
 
 void drawHUD() {
   if (tama.promptId[0]) { drawApproval(); return; }
   const Palette& p = characterPalette();
-  const int SHOW = 3, LH = 8, WIDTH = 21;
+  const int SHOW = 3, LH = FH, WIDTH = CHARS_PER_LINE;
   const int AREA = SHOW * LH + 4;
   spr.fillRect(0, H - AREA, W, AREA, p.bg);
   spr.setTextSize(1);
@@ -838,7 +894,7 @@ void drawHUD() {
     return;
   }
 
-  static char disp[32][24];
+  static char disp[32][36];
   static uint8_t srcOf[32];
   uint8_t nDisp = 0;
   for (uint8_t i = 0; i < tama.nLines && nDisp < 32; i++) {
@@ -862,7 +918,7 @@ void drawHUD() {
   }
   if (msgScroll > 0) {
     spr.setTextColor(p.body, p.bg);
-    spr.setCursor(W - 18, H - LH - 2);
+    spr.setCursor(W - 24, H - FH - 2);
     spr.printf("-%u", msgScroll);
   }
 }
@@ -882,6 +938,7 @@ void setup() {
   M5.begin(cfg);
 
   M5.Display.setRotation(0);
+  spr.setFont(&efontCN_12);
   startBt();
   applyBrightness();
   lastInteractMs = millis();
@@ -900,19 +957,17 @@ void setup() {
     const Palette& p = characterPalette();
     spr.fillSprite(p.bg);
     spr.setTextDatum(MC_DATUM);
-    spr.setTextSize(2);
     if (ownerName()[0]) {
       char line[40];
       snprintf(line, sizeof(line), "%s's", ownerName());
-      spr.setTextColor(p.text, p.bg);   spr.drawString(line, W/2, H/2 - 12);
-      spr.setTextColor(p.body, p.bg);   spr.drawString(petName(), W/2, H/2 + 12);
+      spr.setTextColor(p.text, p.bg);   spr.drawString(line, W/2, H/2 - 8);
+      spr.setTextColor(p.body, p.bg);   spr.drawString(petName(), W/2, H/2 + 8);
     } else {
-      spr.setTextColor(p.body, p.bg);   spr.drawString("Hello!", W/2, H/2 - 12);
-      spr.setTextSize(1);
+      spr.setTextColor(p.body, p.bg);   spr.drawString("Hello!", W/2, H/2 - 8);
       spr.setTextColor(p.textDim, p.bg);
-      spr.drawString("a buddy appears", W/2, H/2 + 12);
+      spr.drawString("a buddy appears", W/2, H/2 + 8);
     }
-    spr.setTextDatum(TL_DATUM); spr.setTextSize(1);
+    spr.setTextDatum(TL_DATUM);
     spr.pushSprite(0, 0);
     delay(1800);
   }

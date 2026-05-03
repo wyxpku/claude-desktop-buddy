@@ -220,14 +220,24 @@ inline void petNameLoad() {
   _prefs.end();
 }
 
-// Strip JSON-breaking chars — these names go into a printf'd JSON string
-// unescaped (xfer.h status response). A quote persists to NVS and breaks
-// the status endpoint until the name is re-set.
+// Strip JSON-breaking chars while preserving UTF-8 multi-byte sequences
 static void _safeCopy(char* dst, size_t dstLen, const char* src) {
   size_t j = 0;
-  for (size_t i = 0; src[i] && j < dstLen - 1; i++) {
-    char c = src[i];
-    if (c != '"' && c != '\\' && c >= 0x20) dst[j++] = c;
+  size_t i = 0;
+  while (src[i] && j < dstLen - 1) {
+    uint8_t b = (uint8_t)src[i];
+    // Determine UTF-8 sequence length
+    uint8_t seqLen = 1;
+    if ((b & 0xE0) == 0xC0) seqLen = 2;
+    else if ((b & 0xF0) == 0xE0) seqLen = 3;
+    else if ((b & 0xF8) == 0xF0) seqLen = 4;
+    // Check ASCII control chars / JSON-breaking chars (only on start byte)
+    if (seqLen == 1 && (b == '"' || b == '\\' || b < 0x20)) {
+      i++;
+      continue;
+    }
+    if (j + seqLen >= dstLen) break;
+    for (uint8_t k = 0; k < seqLen && src[i]; k++) dst[j++] = src[i++];
   }
   dst[j] = 0;
 }

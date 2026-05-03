@@ -4,6 +4,17 @@
 #include "ble_bridge.h"
 #include "xfer.h"
 
+// Copy src into dst (max dstLen-1 bytes), truncating at UTF-8 boundary
+static inline void _utf8Copy(char* dst, size_t dstLen, const char* src) {
+  if (!src || !*src) { dst[0] = 0; return; }
+  size_t len = strlen(src);
+  size_t maxLen = dstLen - 1;
+  if (len > maxLen) len = maxLen;
+  while (len > 0 && ((uint8_t)src[len] & 0xC0) == 0x80) len--;
+  memcpy(dst, src, len);
+  dst[len] = 0;
+}
+
 struct TamaState {
   uint8_t  sessionsTotal;
   uint8_t  sessionsRunning;
@@ -11,14 +22,14 @@ struct TamaState {
   bool     recentlyCompleted;
   uint32_t tokensToday;
   uint32_t lastUpdated;
-  char     msg[24];
+  char     msg[64];
   bool     connected;
   char     lines[8][92];
   uint8_t  nLines;
   uint16_t lineGen;          // bumps when lines change — lets UI reset scroll
   char     promptId[40];     // pending permission request ID; empty = no prompt
   char     promptTool[20];
-  char     promptHint[44];
+  char     promptHint[92];
 };
 
 // ---------------------------------------------------------------------------
@@ -98,14 +109,14 @@ static void _applyJson(const char* line, TamaState* out) {
   if (doc["tokens"].is<uint32_t>()) statsOnBridgeTokens(bridgeTokens);
   out->tokensToday = doc["tokens_today"] | out->tokensToday;
   const char* m = doc["msg"];
-  if (m) { strncpy(out->msg, m, sizeof(out->msg)-1); out->msg[sizeof(out->msg)-1]=0; }
+  if (m) { _utf8Copy(out->msg, sizeof(out->msg), m); }
   JsonArray la = doc["entries"];
   if (!la.isNull()) {
     uint8_t n = 0;
     for (JsonVariant v : la) {
       if (n >= 8) break;
       const char* s = v.as<const char*>();
-      strncpy(out->lines[n], s ? s : "", 91); out->lines[n][91]=0;
+      _utf8Copy(out->lines[n], sizeof(out->lines[n]), s ? s : "");
       n++;
     }
     if (n != out->nLines || (n > 0 && strcmp(out->lines[n-1], out->msg) != 0)) {
@@ -116,9 +127,9 @@ static void _applyJson(const char* line, TamaState* out) {
   JsonObject pr = doc["prompt"];
   if (!pr.isNull()) {
     const char* pid = pr["id"]; const char* pt = pr["tool"]; const char* ph = pr["hint"];
-    strncpy(out->promptId,   pid ? pid : "", sizeof(out->promptId)-1);   out->promptId[sizeof(out->promptId)-1]=0;
-    strncpy(out->promptTool, pt  ? pt  : "", sizeof(out->promptTool)-1); out->promptTool[sizeof(out->promptTool)-1]=0;
-    strncpy(out->promptHint, ph  ? ph  : "", sizeof(out->promptHint)-1); out->promptHint[sizeof(out->promptHint)-1]=0;
+    _utf8Copy(out->promptId,   sizeof(out->promptId),   pid ? pid : "");
+    _utf8Copy(out->promptTool, sizeof(out->promptTool), pt  ? pt  : "");
+    _utf8Copy(out->promptHint, sizeof(out->promptHint), ph  ? ph  : "");
   } else {
     out->promptId[0] = 0; out->promptTool[0] = 0; out->promptHint[0] = 0;
   }

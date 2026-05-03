@@ -12,7 +12,7 @@ static const char* STATE_NAMES[] = {
 static const uint8_t N_STATES = 7;
 
 struct TextState {
-  char     frames[8][20];
+  char     frames[8][64];
   uint8_t  nFrames;
   uint16_t delayMs;
 };
@@ -42,7 +42,7 @@ static void gifPlace() {
   int outW = peekMode ? gifW / 2 : gifW;
   int outH = peekMode ? gifH / 2 : gifH;
   gifX = (spr.width() - outW) / 2;
-  gifY = peekMode ? (PEEK_TOP - outH) / 2 : (140 - outH) / 2;
+  gifY = peekMode ? (PEEK_TOP - outH) / 2 : (110 - outH) / 2;
 }
 static uint32_t    nextFrameAt = 0;
 static uint32_t    animPauseUntil = 0;
@@ -193,8 +193,8 @@ bool characterInit(const char* name) {
       for (JsonVariant v : fr) {
         if (ts.nFrames >= 8) break;
         const char* s = v.as<const char*>();
-        strncpy(ts.frames[ts.nFrames], s ? s : "", 19);
-        ts.frames[ts.nFrames][19] = 0;
+        strncpy(ts.frames[ts.nFrames], s ? s : "", 63);
+        ts.frames[ts.nFrames][63] = 0;
         ts.nFrames++;
       }
     }
@@ -324,11 +324,9 @@ void characterTick() {
     spr.fillRect(0, cy - 14, spr.width(), 28, pal.bg);
 
     const char* line = ts.frames[textFrame];
-    int len = strlen(line);
-    int tw = len * 12;
+    int tw = spr.textWidth(line);
     spr.setTextColor(pal.body, pal.bg);
-    spr.setTextSize(2);
-    spr.setCursor((spr.width() - tw) / 2, cy - 8);
+    spr.setCursor((spr.width() - tw) / 2, cy - 6);
     spr.print(line);
 
     textFrame = (textFrame + 1) % ts.nFrames;
