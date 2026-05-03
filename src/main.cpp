@@ -955,19 +955,23 @@ void setup() {
 
   {
     const Palette& p = characterPalette();
+    spr.setFont(&efontCN_12);
     spr.fillSprite(p.bg);
     spr.setTextDatum(MC_DATUM);
     if (ownerName()[0]) {
       char line[40];
       snprintf(line, sizeof(line), "%s's", ownerName());
-      spr.setTextColor(p.text, p.bg);   spr.drawString(line, W/2, H/2 - 8);
-      spr.setTextColor(p.body, p.bg);   spr.drawString(petName(), W/2, H/2 + 8);
+      spr.setTextSize(2);
+      spr.setTextColor(p.text, p.bg);   spr.drawString(line, W/2, H/2 - 14);
+      spr.setTextColor(p.body, p.bg);   spr.drawString(petName(), W/2, H/2 + 14);
     } else {
-      spr.setTextColor(p.body, p.bg);   spr.drawString("Hello!", W/2, H/2 - 8);
+      spr.setTextSize(2);
+      spr.setTextColor(p.body, p.bg);   spr.drawString("Hello!", W/2, H/2 - 14);
+      spr.setTextSize(1);
       spr.setTextColor(p.textDim, p.bg);
-      spr.drawString("a buddy appears", W/2, H/2 + 8);
+      spr.drawString("a buddy appears", W/2, H/2 + 14);
     }
-    spr.setTextDatum(TL_DATUM);
+    spr.setTextDatum(TL_DATUM); spr.setTextSize(1);
     spr.pushSprite(0, 0);
     delay(1800);
   }
