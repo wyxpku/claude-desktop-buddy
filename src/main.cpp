@@ -22,6 +22,7 @@ static void startBt() {
 
 #include "character.h"
 #include "stats.h"
+#include "i18n.h"
 const int W = 135, H = 240;
 const int CX = W / 2;
 const int CY_BASE = 120;
@@ -134,17 +135,23 @@ void applyDisplayMode() {
   characterInvalidate();
 }
 
-const char* menuItems[] = { "settings", "turn off", "help", "about", "demo", "close" };
+static const StrID menuIds[] = {
+  S_MENU_SETTINGS, S_MENU_TURN_OFF, S_MENU_HELP, S_MENU_ABOUT, S_MENU_DEMO, S_MENU_CLOSE
+};
 const uint8_t MENU_N = 6;
 
 bool    settingsOpen = false;
 uint8_t settingsSel  = 0;
-const char* settingsItems[] = { "brightness", "sound", "bluetooth", "wifi", "led", "transcript", "clock rot", "ascii pet", "reset", "back" };
-const uint8_t SETTINGS_N = 10;
+static const StrID settingsIds[] = {
+  S_SET_BRIGHTNESS, S_SET_SOUND, S_SET_BLUETOOTH, S_SET_WIFI,
+  S_SET_LED, S_SET_TRANSCRIPT, S_SET_LANGUAGE, S_SET_CLOCK_ROT,
+  S_SET_ASCII_PET, S_SET_RESET, S_SET_BACK
+};
+const uint8_t SETTINGS_N = 11;
 
 bool    resetOpen = false;
 uint8_t resetSel  = 0;
-const char* resetItems[] = { "delete char", "factory reset", "back" };
+static const StrID resetIds[] = { S_RESET_DELETE, S_RESET_FACTORY, S_RESET_BACK };
 const uint8_t RESET_N = 3;
 static uint32_t resetConfirmUntil = 0;
 static uint8_t  resetConfirmIdx = 0xFF;
@@ -163,10 +170,14 @@ static void applySetting(uint8_t idx) {
     case 3: s.wifi = !s.wifi; break;
     case 4: s.led = !s.led; break;
     case 5: s.hud = !s.hud; break;
-    case 6: s.clockRot = (s.clockRot + 1) % 3; break;
-    case 7: nextPet(); return;
-    case 8: resetOpen = true; resetSel = 0; resetConfirmIdx = 0xFF; return;
-    case 9: settingsOpen = false; characterInvalidate(); return;
+    case 6:
+      s.lang = (s.lang + 1) % LANG_COUNT;
+      langSet((Lang)s.lang);
+      break;
+    case 7: s.clockRot = (s.clockRot + 1) % 3; break;
+    case 8: nextPet(); return;
+    case 9: resetOpen = true; resetSel = 0; resetConfirmIdx = 0xFF; return;
+    case 10: settingsOpen = false; characterInvalidate(); return;
   }
   settingsSave();
 }
@@ -249,24 +260,26 @@ static void drawSettings() {
     spr.setTextColor(sel ? p.text : p.textDim, PANEL);
     spr.setCursor(mx + 6, my + 8 + i * FH);
     spr.print(sel ? "> " : "  ");
-    spr.print(settingsItems[i]);
+    spr.print(T(settingsIds[i]));
     spr.setCursor(mx + mw - 36, my + 8 + i * FH);
     spr.setTextColor(p.textDim, PANEL);
     if (i == 0) {
       spr.printf("%u/4", brightLevel);
     } else if (i >= 1 && i <= 5) {
       spr.setTextColor(vals[i-1] ? GREEN : p.textDim, PANEL);
-      spr.print(vals[i-1] ? " on" : "off");
+      spr.print(vals[i-1] ? T(S_ON) : T(S_OFF));
     } else if (i == 6) {
-      static const char* const RN[] = { "auto", "port", "land" };
-      spr.print(RN[s.clockRot]);
+      spr.print(s.lang == LANG_EN ? T(S_ENGLISH) : T(S_CHINESE));
     } else if (i == 7) {
+      static const StrID rotIds[] = { S_AUTO, S_PORT, S_LAND };
+      spr.print(T(rotIds[s.clockRot]));
+    } else if (i == 8) {
       uint8_t total = buddySpeciesCount() + (gifAvailable ? 1 : 0);
       uint8_t pos   = buddyMode ? buddySpeciesIdx() + 1 : total;
       spr.printf("%u/%u", pos, total);
     }
   }
-  drawMenuHints(p, mx, mw, my + mh - 12, "Next", "Change");
+  drawMenuHints(p, mx, mw, my + mh - 12, T(S_NEXT), T(S_CHANGE));
 }
 
 static void drawReset() {
@@ -284,7 +297,7 @@ static void drawReset() {
     bool armed = (i == resetConfirmIdx) &&
                  (int32_t)(millis() - resetConfirmUntil) < 0;
     if (armed) spr.setTextColor(HOT, PANEL);
-    spr.print(armed ? "really?" : resetItems[i]);
+    spr.print(armed ? T(S_REALLY) : T(resetIds[i]));
   }
   drawMenuHints(p, mx, mw, my + mh - 12);
 }
@@ -318,8 +331,8 @@ void drawMenu() {
     spr.setTextColor(sel ? p.text : p.textDim, PANEL);
     spr.setCursor(mx + 6, my + 8 + i * FH);
     spr.print(sel ? "> " : "  ");
-    spr.print(menuItems[i]);
-    if (i == 4) spr.print(dataDemo() ? "  on" : "  off");
+    spr.print(T(menuIds[i]));
+    if (i == 4) spr.print(dataDemo() ? T(S_ON) : T(S_OFF));
   }
   drawMenuHints(p, mx, mw, my + mh - 12);
 }
@@ -373,10 +386,11 @@ static void clockUpdateOrient() {
   }
 }
 
-static const char* const MON[] = {
-  "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"
+static const StrID monIds[] = {
+  S_JAN, S_FEB, S_MAR, S_APR, S_MAY, S_JUN,
+  S_JUL, S_AUG, S_SEP, S_OCT, S_NOV, S_DEC
 };
-static const char* const DOW[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
+static const StrID dowIds[] = { S_SUN, S_MON, S_TUE, S_WED, S_THU, S_FRI, S_SAT };
 
 static uint8_t clockDow() { return _clkDt.weekDay % 7; }
 static void drawClock() {
@@ -384,7 +398,7 @@ static void drawClock() {
   char hm[6]; snprintf(hm, sizeof(hm), "%02u:%02u", _clkTm.hours, _clkTm.minutes);
   char ss[4]; snprintf(ss, sizeof(ss), ":%02u", _clkTm.seconds);
   uint8_t mi = (_clkDt.month >= 1 && _clkDt.month <= 12) ? _clkDt.month - 1 : 0;
-  char dl[8]; snprintf(dl, sizeof(dl), "%s %02u", MON[mi], _clkDt.date);
+  char dl[16]; snprintf(dl, sizeof(dl), "%s %02u", T(monIds[mi]), _clkDt.date);
 
   if (clockOrient == 0) {
     paintedOrient = 0;
@@ -405,7 +419,7 @@ static void drawClock() {
 
   if (repaint || _clkTm.seconds != lastSec) {
     lastSec = _clkTm.seconds;
-    char wdl[12]; snprintf(wdl, sizeof(wdl), "%s %s %02u", DOW[clockDow()], MON[mi], _clkDt.date);
+    char wdl[16]; snprintf(wdl, sizeof(wdl), "%s %s %02u", T(dowIds[clockDow()]), T(monIds[mi]), _clkDt.date);
     char ssl[3]; snprintf(ssl, sizeof(ssl), "%02u", _clkTm.seconds);
     M5.Display.setTextDatum(MC_DATUM);
     M5.Display.setTextSize(2); M5.Display.setTextColor(p.text, p.bg);    M5.Display.drawString(hm, 170, 42);
@@ -455,7 +469,7 @@ bool checkShake() {
 
 static void _infoHeader(const Palette& p, int& y, const char* section, uint8_t page) {
   spr.setTextColor(p.text, p.bg);
-  spr.setCursor(4, y); spr.print("Info");
+  spr.setCursor(4, y); spr.print(T(S_INFO));
   spr.setTextColor(p.textDim, p.bg);
   spr.setCursor(W - 36, y); spr.printf("%u/%u", page + 1, INFO_PAGES);
   y += 12;
@@ -468,8 +482,8 @@ void drawPasskey() {
   const Palette& p = characterPalette();
   spr.fillSprite(p.bg);
   spr.setTextColor(p.textDim, p.bg);
-  spr.setCursor(8, 56);  spr.print("BLUETOOTH PAIRING");
-  spr.setCursor(8, 184); spr.print("enter on desktop:");
+  spr.setCursor(8, 56);  spr.print(T(S_BT_PAIRING));
+  spr.setCursor(8, 184); spr.print(T(S_ENTER_DESKTOP));
   spr.setTextColor(p.text, p.bg);
   char b[8]; snprintf(b, sizeof(b), "%06lu", (unsigned long)blePasskey());
   int tw = spr.textWidth(b);
@@ -489,56 +503,56 @@ void drawInfo() {
   };
 
   if (infoPage == 0) {
-    _infoHeader(p, y, "ABOUT", infoPage);
+    _infoHeader(p, y, T(S_H_ABOUT), infoPage);
     spr.setTextColor(p.textDim, p.bg);
-    ln("I watch your Claude");
-    ln("desktop sessions.");
+    ln(T(S_ABOUT_1));
+    ln(T(S_ABOUT_2));
     y += 4;
-    ln("I sleep when nothing's");
-    ln("happening, wake when");
-    ln("you start working,");
-    ln("get impatient when");
-    ln("approvals pile up.");
+    ln(T(S_ABOUT_3));
+    ln(T(S_ABOUT_4));
+    ln(T(S_ABOUT_5));
+    ln(T(S_ABOUT_6));
+    ln(T(S_ABOUT_7));
     y += 4;
     spr.setTextColor(p.text, p.bg);
-    ln("Press A on a prompt");
-    ln("to approve from here.");
+    ln(T(S_ABOUT_8));
+    ln(T(S_ABOUT_9));
     y += 4;
     spr.setTextColor(p.textDim, p.bg);
-    ln("18 species. Settings");
-    ln("> ascii pet to cycle.");
+    ln(T(S_ABOUT_10));
+    ln(T(S_ASCII_PET_HINT));
 
   } else if (infoPage == 1) {
-    _infoHeader(p, y, "BUTTONS", infoPage);
-    spr.setTextColor(p.text, p.bg);    ln("A   front");
-    spr.setTextColor(p.textDim, p.bg); ln("    next screen");
-    ln("    approve prompt");
-    spr.setTextColor(p.text, p.bg);    ln("B   right side");
-    spr.setTextColor(p.textDim, p.bg); ln("    next page");
-    ln("    deny prompt");
-    spr.setTextColor(p.text, p.bg);    ln("hold A");
-    spr.setTextColor(p.textDim, p.bg); ln("    menu");
-    spr.setTextColor(p.text, p.bg);    ln("Power");
-    spr.setTextColor(p.textDim, p.bg); ln("    tap=off hold=pwr");
+    _infoHeader(p, y, T(S_H_BUTTONS), infoPage);
+    spr.setTextColor(p.text, p.bg);    ln(T(S_A_FRONT));
+    spr.setTextColor(p.textDim, p.bg); ln(T(S_NEXT_SCREEN));
+    ln(T(S_APPROVE_PROMPT));
+    spr.setTextColor(p.text, p.bg);    ln(T(S_B_RIGHT));
+    spr.setTextColor(p.textDim, p.bg); ln(T(S_NEXT_PAGE));
+    ln(T(S_DENY_PROMPT));
+    spr.setTextColor(p.text, p.bg);    ln(T(S_HOLD_A));
+    spr.setTextColor(p.textDim, p.bg); ln(T(S_MENU));
+    spr.setTextColor(p.text, p.bg);    ln(T(S_POWER));
+    spr.setTextColor(p.textDim, p.bg); ln(T(S_TAP_OFF_HOLD_PWR));
 
   } else if (infoPage == 2) {
-    _infoHeader(p, y, "CLAUDE", infoPage);
+    _infoHeader(p, y, T(S_H_CLAUDE), infoPage);
     spr.setTextColor(p.textDim, p.bg);
-    ln("  sessions  %u", tama.sessionsTotal);
-    ln("  running   %u", tama.sessionsRunning);
-    ln("  waiting   %u", tama.sessionsWaiting);
+    ln(T(S_SESSIONS), tama.sessionsTotal);
+    ln(T(S_RUNNING), tama.sessionsRunning);
+    ln(T(S_WAITING), tama.sessionsWaiting);
     y += 8;
     spr.setTextColor(p.text, p.bg);
-    ln("LINK");
+    ln(T(S_LINK));
     spr.setTextColor(p.textDim, p.bg);
-    ln("  via       %s", dataScenarioName());
-    ln("  ble       %s", !bleConnected() ? "-" : bleSecure() ? "encrypted" : "OPEN");
+    ln(T(S_VIA), dataScenarioName());
+    ln(T(S_BLE), !bleConnected() ? "-" : bleSecure() ? T(S_ENCRYPTED) : T(S_OPEN));
     uint32_t age = (millis() - tama.lastUpdated) / 1000;
-    ln("  last msg  %lus", (unsigned long)age);
-    ln("  state     %s", stateNames[activeState]);
+    ln(T(S_LAST_MSG), (unsigned long)age);
+    ln(T(S_STATE), stateNames[activeState]);
 
   } else if (infoPage == 3) {
-    _infoHeader(p, y, "DEVICE", infoPage);
+    _infoHeader(p, y, T(S_H_DEVICE), infoPage);
 
     int vBat_mV = M5.Power.getBatteryVoltage();
     int iBat_mA = M5.Power.getBatteryCurrent();
@@ -553,31 +567,31 @@ void drawInfo() {
     spr.printf("%d%%", pct);
     spr.setTextColor(full ? GREEN : (charging ? HOT : p.textDim), p.bg);
     spr.setCursor(60, y);
-    spr.print(full ? "full" : (charging ? "charging" : (usb ? "usb" : "battery")));
+    spr.print(full ? T(S_FULL) : (charging ? T(S_CHARGING) : (usb ? T(S_USB) : T(S_BATTERY_STATE))));
     y += FH;
 
     spr.setTextColor(p.textDim, p.bg);
-    ln("  battery  %d.%02dV", vBat_mV/1000, (abs(vBat_mV)%1000)/10);
-    ln("  current  %+dmA", iBat_mA);
+    ln(T(S_BATTERY), vBat_mV/1000, (abs(vBat_mV)%1000)/10);
+    ln(T(S_CURRENT), iBat_mA);
     y += 4;
 
     spr.setTextColor(p.text, p.bg);
-    ln("SYSTEM");
+    ln(T(S_SYSTEM));
     spr.setTextColor(p.textDim, p.bg);
-    if (ownerName()[0]) ln("  owner    %s", ownerName());
+    if (ownerName()[0]) ln(T(S_OWNER), ownerName());
     uint32_t up = millis() / 1000;
-    ln("  uptime   %luh %02lum", up / 3600, (up / 60) % 60);
-    ln("  heap     %uKB", ESP.getFreeHeap() / 1024);
-    ln("  bright   %u/4", brightLevel);
-    ln("  bt       %s", settings().bt ? (dataBtActive() ? "linked" : "on") : "off");
+    ln(T(S_UPTIME), up / 3600, (up / 60) % 60);
+    ln(T(S_HEAP), ESP.getFreeHeap() / 1024);
+    ln(T(S_BRIGHT), brightLevel);
+    ln(T(S_BT), settings().bt ? (dataBtActive() ? T(S_LINKED) : "on") : T(S_OFF));
 
   } else if (infoPage == 4) {
-    _infoHeader(p, y, "BLUETOOTH", infoPage);
+    _infoHeader(p, y, T(S_H_BLUETOOTH), infoPage);
     bool linked = settings().bt && dataBtActive();
 
     spr.setTextColor(linked ? GREEN : (settings().bt ? HOT : p.textDim), p.bg);
     spr.setCursor(4, y);
-    spr.print(linked ? "linked" : (settings().bt ? "discover" : "off"));
+    spr.print(linked ? T(S_LINKED) : (settings().bt ? T(S_DISCOVER) : T(S_OFF)));
     y += FH;
 
     spr.setTextColor(p.textDim, p.bg);
@@ -592,35 +606,35 @@ void drawInfo() {
 
     if (linked) {
       uint32_t age = (millis() - tama.lastUpdated) / 1000;
-      ln("  last msg  %lus", (unsigned long)age);
+      ln(T(S_LAST_MSG), (unsigned long)age);
     } else if (settings().bt) {
       spr.setTextColor(p.text, p.bg);
-      ln("TO PAIR");
+      ln(T(S_TO_PAIR));
       spr.setTextColor(p.textDim, p.bg);
-      ln(" Open Claude desktop");
-      ln(" > Developer");
-      ln(" > Hardware Buddy");
+      ln(T(S_OPEN_CLAUDE));
+      ln(T(S_DEV));
+      ln(T(S_HW_BUDDY));
       y += 4;
-      ln(" auto-connects via BLE");
+      ln(T(S_AUTO_CONNECT));
     }
 
   } else {
-    _infoHeader(p, y, "CREDITS", infoPage);
+    _infoHeader(p, y, T(S_H_CREDITS), infoPage);
     spr.setTextColor(p.textDim, p.bg);
-    ln("made by");
+    ln(T(S_MADE_BY));
     y += 4;
     spr.setTextColor(p.text, p.bg);
-    ln("Felix Rieseberg");
+    ln(T(S_FELIX));
     y += 12;
     spr.setTextColor(p.textDim, p.bg);
-    ln("source");
+    ln(T(S_SOURCE));
     y += 4;
     spr.setTextColor(p.text, p.bg);
     ln("github.com/anthropics");
     ln("/claude-desktop-buddy");
     y += 12;
     spr.setTextColor(p.textDim, p.bg);
-    ln("hardware");
+    ln(T(S_HARDWARE));
     y += 4;
     ln("M5StickS3");
     ln("ESP32-S3 + M5PM1");
@@ -696,7 +710,7 @@ static void drawApproval() {
   spr.setCursor(4, H - AREA + 4);
   uint32_t waited = (millis() - promptArrivedMs) / 1000;
   if (waited >= 10) spr.setTextColor(HOT, p.bg);
-  spr.printf("approve? %lus", (unsigned long)waited);
+  spr.printf(T(S_APPROVE_FMT), (unsigned long)waited);
 
   spr.setTextColor(p.text, p.bg);
   spr.setCursor(4, H - AREA + 4 + FH);
@@ -728,14 +742,14 @@ static void drawApproval() {
   if (responseSent) {
     spr.setTextColor(p.textDim, p.bg);
     spr.setCursor(4, H - FH - 2);
-    spr.print("sent...");
+    spr.print(T(S_SENT));
   } else {
     spr.setTextColor(GREEN, p.bg);
     spr.setCursor(4, H - FH - 2);
-    spr.print("A: yes");
+    spr.print(T(S_A_YES));
     spr.setTextColor(HOT, p.bg);
     spr.setCursor(W - 36, H - FH - 2);
-    spr.print("B: no");
+    spr.print(T(S_B_NO));
   }
 }
 
@@ -762,14 +776,14 @@ static void drawPetStats(const Palette& p) {
   auto iconY = [](int rowY) -> int { return rowY + FH / 2; };
 
   spr.setTextColor(p.textDim, p.bg);
-  spr.setCursor(6, textY(y)); spr.print("mood");
+  spr.setCursor(6, textY(y)); spr.print(T(S_MOOD));
   uint8_t mood = statsMoodTier();
   uint16_t moodCol = (mood >= 3) ? RED : (mood >= 2) ? HOT : p.textDim;
   int icy = iconY(y);
   for (int i = 0; i < 4; i++) tinyHeart(54 + i * 16, icy, i < mood, moodCol);
 
   y += FH + 4;
-  spr.setCursor(6, textY(y)); spr.print("fed");
+  spr.setCursor(6, textY(y)); spr.print(T(S_FED));
   uint8_t fed = statsFedProgress();
   icy = iconY(y);
   for (int i = 0; i < 10; i++) {
@@ -779,7 +793,7 @@ static void drawPetStats(const Palette& p) {
   }
 
   y += FH + 4;
-  spr.setCursor(6, textY(y)); spr.print("energy");
+  spr.setCursor(6, textY(y)); spr.print(T(S_ENERGY));
   uint8_t en = statsEnergyTier();
   uint16_t enCol = (en >= 4) ? 0x07FF : (en >= 2) ? 0xFFE0 : HOT;
   icy = iconY(y);
@@ -793,25 +807,25 @@ static void drawPetStats(const Palette& p) {
   int badgeH = FH + 4;
   spr.fillRoundRect(6, y, 44, badgeH, 3, p.body);
   spr.setTextColor(p.bg, p.body);
-  spr.setCursor(11, y + 2); spr.printf("Lv %u", stats().level);
+  spr.setCursor(11, y + 2); spr.printf(T(S_LV), stats().level);
 
   y += badgeH + 6;
   spr.setTextColor(p.textDim, p.bg);
   spr.setCursor(6, y);
-  spr.printf("approved %u", stats().approvals);
+  spr.printf(T(S_APPROVED), stats().approvals);
   spr.setCursor(6, y + FH);
-  spr.printf("denied   %u", stats().denials);
+  spr.printf(T(S_DENIED), stats().denials);
   uint32_t nap = stats().napSeconds;
   spr.setCursor(6, y + FH * 2);
-  spr.printf("napped   %luh%02lum", nap/3600, (nap/60)%60);
+  spr.printf(T(S_NAPPED), nap/3600, (nap/60)%60);
   auto tokFmt = [&](const char* label, uint32_t v, int yPx) {
     spr.setCursor(6, yPx);
     if (v >= 1000000)   spr.printf("%s%lu.%luM", label, v/1000000, (v/100000)%10);
     else if (v >= 1000) spr.printf("%s%lu.%luK", label, v/1000, (v/100)%10);
     else                spr.printf("%s%lu", label, v);
   };
-  tokFmt("tokens   ", stats().tokens, y + FH * 3);
-  tokFmt("today    ", tama.tokensToday, y + FH * 4);
+  tokFmt(T(S_TOKENS), stats().tokens, y + FH * 3);
+  tokFmt(T(S_TODAY), tama.tokensToday, y + FH * 4);
 }
 
 static void drawPetHowTo(const Palette& p) {
@@ -826,23 +840,23 @@ static void drawPetHowTo(const Palette& p) {
 
   y += FH;
 
-  ln(p.body,    "MOOD");
-  ln(p.textDim, " approve fast = up");
-  ln(p.textDim, " deny lots = down"); gap();
+  ln(p.body,    T(S_HOW_MOOD));
+  ln(p.textDim, T(S_APPROVE_FAST));
+  ln(p.textDim, T(S_DENY_LOTS)); gap();
 
-  ln(p.body,    "FED");
-  ln(p.textDim, " 50K tokens =");
-  ln(p.textDim, " level up + confetti"); gap();
+  ln(p.body,    T(S_HOW_FED));
+  ln(p.textDim, T(S_50K_TOKENS));
+  ln(p.textDim, T(S_LEVEL_UP)); gap();
 
-  ln(p.body,    "ENERGY");
-  ln(p.textDim, " face-down to nap");
-  ln(p.textDim, " refills to full"); gap();
+  ln(p.body,    T(S_HOW_ENERGY));
+  ln(p.textDim, T(S_FACE_DOWN));
+  ln(p.textDim, T(S_REFILLS)); gap();
 
-  ln(p.textDim, "idle 30s = off");
-  ln(p.textDim, "any button = wake"); gap();
+  ln(p.textDim, T(S_IDLE_OFF));
+  ln(p.textDim, T(S_BTN_WAKE)); gap();
 
-  ln(p.textDim, "A: screens  B: page");
-  ln(p.textDim, "hold A: menu");
+  ln(p.textDim, T(S_A_SCREEN_B_PAGE));
+  ln(p.textDim, T(S_HOLD_A_MENU));
 }
 
 void drawPet() {
@@ -957,10 +971,10 @@ void setup() {
       spr.setTextColor(p.body, p.bg);   spr.drawString(petName(), W/2, H/2 + 14);
     } else {
       spr.setTextSize(2);
-      spr.setTextColor(p.body, p.bg);   spr.drawString("Hello!", W/2, H/2 - 14);
+      spr.setTextColor(p.body, p.bg);   spr.drawString(T(S_HELLO), W/2, H/2 - 14);
       spr.setTextSize(1);
       spr.setTextColor(p.textDim, p.bg);
-      spr.drawString("a buddy appears", W/2, H/2 + 14);
+      spr.drawString(T(S_BUDDY_APPEARS), W/2, H/2 + 14);
     }
     spr.setTextDatum(TL_DATUM); spr.setTextSize(1);
     spr.pushSprite(0, 0);
@@ -1177,7 +1191,7 @@ void loop() {
     if (xferActive()) {
       uint32_t done = xferProgress(), total = xferTotal();
       spr.setCursor(8, 90);
-      spr.print("installing");
+      spr.print(T(S_INSTALLING));
       spr.setCursor(8, 102);
       spr.printf("%luK / %luK", done/1024, total/1024);
       int barW = W - 16;
@@ -1188,7 +1202,7 @@ void loop() {
       }
     } else {
       spr.setCursor(8, 100);
-      spr.print("no character loaded");
+      spr.print(T(S_NO_CHAR));
     }
   }
   if (landscapeClock) {

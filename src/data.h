@@ -3,6 +3,7 @@
 #include <ArduinoJson.h>
 #include "ble_bridge.h"
 #include "xfer.h"
+#include "i18n.h"
 
 // Copy src into dst (max dstLen-1 bytes), truncating at UTF-8 boundary
 static inline void _utf8Copy(char* dst, size_t dstLen, const char* src) {
@@ -188,7 +189,7 @@ inline void dataPoll(TamaState* out) {
   if (!out->connected) {
     out->sessionsTotal=0; out->sessionsRunning=0; out->sessionsWaiting=0;
     out->recentlyCompleted=false; out->lastUpdated=now;
-    strncpy(out->msg, "No Claude connected", sizeof(out->msg)-1);
+    strncpy(out->msg, T(S_NO_CLAUDE), sizeof(out->msg)-1);
     out->msg[sizeof(out->msg)-1]=0;
   }
 }
