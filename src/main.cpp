@@ -949,6 +949,7 @@ void setup() {
   lastInteractMs = millis();
   statsLoad();
   settingsLoad();
+  langSet((Lang)settings().lang);
   petNameLoad();
   buddyInit();
 
