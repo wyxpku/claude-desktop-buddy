@@ -127,10 +127,13 @@ const uint8_t INFO_PAGES = 6;
 const uint8_t INFO_PG_BUTTONS = 1;
 const uint8_t INFO_PG_CREDITS = 5;
 
+static uint8_t  _pageScroll;
+
 void applyDisplayMode() {
   bool peek = displayMode != DISP_NORMAL;
   characterSetPeek(peek);
   buddySetPeek(peek);
+  _pageScroll = 0;
   spr.fillSprite(0x0000);
   characterInvalidate();
 }
@@ -464,184 +467,6 @@ bool checkShake() {
   return delta > 0.8f;
 }
 
-
-
-
-static void _infoHeader(const Palette& p, int& y, const char* section, uint8_t page) {
-  spr.setTextColor(p.text, p.bg);
-  spr.setCursor(4, y); spr.print(T(S_INFO));
-  spr.setTextColor(p.textDim, p.bg);
-  spr.setCursor(W - 36, y); spr.printf("%u/%u", page + 1, INFO_PAGES);
-  y += 12;
-  spr.setTextColor(p.body, p.bg);
-  spr.setCursor(4, y); spr.print(section);
-  y += 12;
-}
-
-void drawPasskey() {
-  const Palette& p = characterPalette();
-  spr.fillSprite(p.bg);
-  spr.setTextColor(p.textDim, p.bg);
-  spr.setCursor(8, 56);  spr.print(T(S_BT_PAIRING));
-  spr.setCursor(8, 184); spr.print(T(S_ENTER_DESKTOP));
-  spr.setTextColor(p.text, p.bg);
-  char b[8]; snprintf(b, sizeof(b), "%06lu", (unsigned long)blePasskey());
-  int tw = spr.textWidth(b);
-  spr.setCursor((W - tw) / 2, 110);
-  spr.print(b);
-}
-
-void drawInfo() {
-  const Palette& p = characterPalette();
-  const int TOP = 70;
-  spr.fillRect(0, TOP, W, H - TOP, p.bg);
-  spr.setTextSize(1);
-  int y = TOP + 2;
-  auto ln = [&](const char* fmt, ...) {
-    char b[32]; va_list a; va_start(a, fmt); vsnprintf(b, sizeof(b), fmt, a); va_end(a);
-    spr.setCursor(4, y); spr.print(b); y += FH;
-  };
-
-  if (infoPage == 0) {
-    _infoHeader(p, y, T(S_H_ABOUT), infoPage);
-    spr.setTextColor(p.textDim, p.bg);
-    ln(T(S_ABOUT_1));
-    ln(T(S_ABOUT_2));
-    y += 4;
-    ln(T(S_ABOUT_3));
-    ln(T(S_ABOUT_4));
-    ln(T(S_ABOUT_5));
-    ln(T(S_ABOUT_6));
-    ln(T(S_ABOUT_7));
-    y += 4;
-    spr.setTextColor(p.text, p.bg);
-    ln(T(S_ABOUT_8));
-    ln(T(S_ABOUT_9));
-    y += 4;
-    spr.setTextColor(p.textDim, p.bg);
-    ln(T(S_ABOUT_10));
-    ln(T(S_ASCII_PET_HINT));
-
-  } else if (infoPage == 1) {
-    _infoHeader(p, y, T(S_H_BUTTONS), infoPage);
-    spr.setTextColor(p.text, p.bg);    ln(T(S_A_FRONT));
-    spr.setTextColor(p.textDim, p.bg); ln(T(S_NEXT_SCREEN));
-    ln(T(S_APPROVE_PROMPT));
-    spr.setTextColor(p.text, p.bg);    ln(T(S_B_RIGHT));
-    spr.setTextColor(p.textDim, p.bg); ln(T(S_NEXT_PAGE));
-    ln(T(S_DENY_PROMPT));
-    spr.setTextColor(p.text, p.bg);    ln(T(S_HOLD_A));
-    spr.setTextColor(p.textDim, p.bg); ln(T(S_MENU));
-    spr.setTextColor(p.text, p.bg);    ln(T(S_POWER));
-    spr.setTextColor(p.textDim, p.bg); ln(T(S_TAP_OFF_HOLD_PWR));
-
-  } else if (infoPage == 2) {
-    _infoHeader(p, y, T(S_H_CLAUDE), infoPage);
-    spr.setTextColor(p.textDim, p.bg);
-    ln(T(S_SESSIONS), tama.sessionsTotal);
-    ln(T(S_RUNNING), tama.sessionsRunning);
-    ln(T(S_WAITING), tama.sessionsWaiting);
-    y += 8;
-    spr.setTextColor(p.text, p.bg);
-    ln(T(S_LINK));
-    spr.setTextColor(p.textDim, p.bg);
-    ln(T(S_VIA), dataScenarioName());
-    ln(T(S_BLE), !bleConnected() ? "-" : bleSecure() ? T(S_ENCRYPTED) : T(S_OPEN));
-    uint32_t age = (millis() - tama.lastUpdated) / 1000;
-    ln(T(S_LAST_MSG), (unsigned long)age);
-    ln(T(S_STATE), stateNames[activeState]);
-
-  } else if (infoPage == 3) {
-    _infoHeader(p, y, T(S_H_DEVICE), infoPage);
-
-    int vBat_mV = M5.Power.getBatteryVoltage();
-    int iBat_mA = M5.Power.getBatteryCurrent();
-    int pct = (vBat_mV - 3200) / 10;
-    if (pct < 0) pct = 0; if (pct > 100) pct = 100;
-    bool usb = _onUsb;
-    bool charging = usb && iBat_mA > 1;
-    bool full = usb && vBat_mV > 4100 && abs(iBat_mA) < 10;
-
-    spr.setTextColor(p.text, p.bg);
-    spr.setCursor(4, y);
-    spr.printf("%d%%", pct);
-    spr.setTextColor(full ? GREEN : (charging ? HOT : p.textDim), p.bg);
-    spr.setCursor(60, y);
-    spr.print(full ? T(S_FULL) : (charging ? T(S_CHARGING) : (usb ? T(S_USB) : T(S_BATTERY_STATE))));
-    y += FH;
-
-    spr.setTextColor(p.textDim, p.bg);
-    ln(T(S_BATTERY), vBat_mV/1000, (abs(vBat_mV)%1000)/10);
-    ln(T(S_CURRENT), iBat_mA);
-    y += 4;
-
-    spr.setTextColor(p.text, p.bg);
-    ln(T(S_SYSTEM));
-    spr.setTextColor(p.textDim, p.bg);
-    if (ownerName()[0]) ln(T(S_OWNER), ownerName());
-    uint32_t up = millis() / 1000;
-    ln(T(S_UPTIME), up / 3600, (up / 60) % 60);
-    ln(T(S_HEAP), ESP.getFreeHeap() / 1024);
-    ln(T(S_BRIGHT), brightLevel);
-    ln(T(S_BT), settings().bt ? (dataBtActive() ? T(S_LINKED) : "on") : T(S_OFF));
-
-  } else if (infoPage == 4) {
-    _infoHeader(p, y, T(S_H_BLUETOOTH), infoPage);
-    bool linked = settings().bt && dataBtActive();
-
-    spr.setTextColor(linked ? GREEN : (settings().bt ? HOT : p.textDim), p.bg);
-    spr.setCursor(4, y);
-    spr.print(linked ? T(S_LINKED) : (settings().bt ? T(S_DISCOVER) : T(S_OFF)));
-    y += FH;
-
-    spr.setTextColor(p.textDim, p.bg);
-    spr.setTextColor(p.text, p.bg);
-    ln("  %s", btName);
-    spr.setTextColor(p.textDim, p.bg);
-    uint8_t mac[6] = {0};
-    esp_read_mac(mac, ESP_MAC_BT);
-    ln("  %02X:%02X:%02X:%02X:%02X:%02X",
-       mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
-    y += 8;
-
-    if (linked) {
-      uint32_t age = (millis() - tama.lastUpdated) / 1000;
-      ln(T(S_LAST_MSG), (unsigned long)age);
-    } else if (settings().bt) {
-      spr.setTextColor(p.text, p.bg);
-      ln(T(S_TO_PAIR));
-      spr.setTextColor(p.textDim, p.bg);
-      ln(T(S_OPEN_CLAUDE));
-      ln(T(S_DEV));
-      ln(T(S_HW_BUDDY));
-      y += 4;
-      ln(T(S_AUTO_CONNECT));
-    }
-
-  } else {
-    _infoHeader(p, y, T(S_H_CREDITS), infoPage);
-    spr.setTextColor(p.textDim, p.bg);
-    ln(T(S_MADE_BY));
-    y += 4;
-    spr.setTextColor(p.text, p.bg);
-    ln(T(S_FELIX));
-    y += 12;
-    spr.setTextColor(p.textDim, p.bg);
-    ln(T(S_SOURCE));
-    y += 4;
-    spr.setTextColor(p.text, p.bg);
-    ln("github.com/anthropics");
-    ln("/claude-desktop-buddy");
-    y += 12;
-    spr.setTextColor(p.textDim, p.bg);
-    ln(T(S_HARDWARE));
-    y += 4;
-    ln("M5StickS3");
-    ln("ESP32-S3 + M5PM1");
-  }
-}
-
-
 // Advance past one UTF-8 codepoint, return its byte length
 static uint8_t utf8cp(const char* p, uint8_t& bytes) {
   uint8_t b = *p;
@@ -666,7 +491,6 @@ static uint8_t wrapInto(const char* in, char out[][36], uint8_t maxRows, uint8_t
   const char* p = in;
   while (*p && row < maxRows) {
     if (*p == ' ' && col > 0) {
-      // Look ahead: measure next word to decide whether to keep or discard the space
       const char* wp = p + 1;
       int wpx = 0;
       while (*wp && *wp != ' ') {
@@ -676,11 +500,10 @@ static uint8_t wrapInto(const char* in, char out[][36], uint8_t maxRows, uint8_t
         out[row][col] = 0;
         if (++row >= maxRows) return row;
         col = 0; px = 0;
-      } else {
-        out[row][col++] = ' '; px += charPx(1);
+        p++; continue;
       }
-      p++;  // skip space; word chars are handled by the char-by-char path below
-      continue;
+      out[row][col++] = ' '; px += charPx(1);
+      p++; continue;
     }
     uint8_t bl;
     utf8cp(p, bl);
@@ -699,6 +522,227 @@ static uint8_t wrapInto(const char* in, char out[][36], uint8_t maxRows, uint8_t
   if (col > 0 && row < maxRows) { out[row][col] = 0; row++; }
   return row;
 }
+
+// --- Auto-layout system ---------------------------------------------------
+struct TextItem { const char* text; uint16_t color; };
+static TextItem _infoItems[30];
+static uint8_t  _infoItemCount;
+
+static char     _pageRows[40][36];
+static uint16_t _pageRowColor[40];
+static uint8_t  _pageRowCount;
+
+static char     _fmtBuf[10][48];
+static uint8_t  _fmtIdx;
+
+static const char* _fmt(const char* fmt, ...) {
+  char* b = _fmtBuf[_fmtIdx % 10];
+  va_list a; va_start(a, fmt); vsnprintf(b, 48, fmt, a); va_end(a);
+  return _fmtBuf[_fmtIdx++ % 10];
+}
+
+static void layoutItems(const TextItem* items, uint8_t n) {
+  _pageRowCount = 0;
+  for (uint8_t i = 0; i < n && _pageRowCount < 40; i++) {
+    if (!items[i].text || !items[i].text[0]) continue;
+    uint8_t room = 40 - _pageRowCount;
+    if (room == 0) break;
+    uint8_t got = wrapInto(items[i].text, &_pageRows[_pageRowCount], room, 0);
+    for (uint8_t j = 0; j < got; j++)
+      _pageRowColor[_pageRowCount + j] = items[i].color;
+    _pageRowCount += got;
+  }
+}
+
+// --- Info page builders ---------------------------------------------------
+
+static void buildAboutPage(const Palette& p) {
+  auto& it = _infoItems; uint8_t i = 0;
+  it[i++] = {T(S_ABOUT_1), p.textDim};
+  it[i++] = {T(S_ABOUT_2), p.textDim};
+  it[i++] = {T(S_ABOUT_3), p.textDim};
+  it[i++] = {T(S_ABOUT_4), p.textDim};
+  it[i++] = {T(S_ABOUT_5), p.textDim};
+  it[i++] = {T(S_ABOUT_6), p.textDim};
+  it[i++] = {T(S_ABOUT_7), p.textDim};
+  it[i++] = {T(S_ABOUT_8), p.text};
+  it[i++] = {T(S_ABOUT_9), p.text};
+  it[i++] = {T(S_ABOUT_10), p.textDim};
+  it[i++] = {T(S_ASCII_PET_HINT), p.textDim};
+  _infoItemCount = i;
+}
+
+static void buildButtonsPage(const Palette& p) {
+  auto& it = _infoItems; uint8_t i = 0;
+  it[i++] = {T(S_A_FRONT), p.text};
+  it[i++] = {T(S_NEXT_SCREEN), p.textDim};
+  it[i++] = {T(S_APPROVE_PROMPT), p.textDim};
+  it[i++] = {T(S_B_RIGHT), p.text};
+  it[i++] = {T(S_NEXT_PAGE), p.textDim};
+  it[i++] = {T(S_DENY_PROMPT), p.textDim};
+  it[i++] = {T(S_HOLD_A), p.text};
+  it[i++] = {T(S_MENU), p.textDim};
+  it[i++] = {T(S_POWER), p.text};
+  it[i++] = {T(S_TAP_OFF_HOLD_PWR), p.textDim};
+  _infoItemCount = i;
+}
+
+static void buildClaudePage(const Palette& p) {
+  auto& it = _infoItems; uint8_t i = 0;
+  it[i++] = {_fmt(T(S_SESSIONS), tama.sessionsTotal), p.textDim};
+  it[i++] = {_fmt(T(S_RUNNING), tama.sessionsRunning), p.textDim};
+  it[i++] = {_fmt(T(S_WAITING), tama.sessionsWaiting), p.textDim};
+  it[i++] = {T(S_LINK), p.text};
+  const char* sec = dataScenarioName();
+  it[i++] = {_fmt(T(S_VIA), sec), p.textDim};
+  const char* bleState = !bleConnected() ? "-" : bleSecure() ? T(S_ENCRYPTED) : T(S_OPEN);
+  it[i++] = {_fmt(T(S_BLE), bleState), p.textDim};
+  uint32_t age = (millis() - tama.lastUpdated) / 1000;
+  it[i++] = {_fmt(T(S_LAST_MSG), (unsigned long)age), p.textDim};
+  it[i++] = {_fmt(T(S_STATE), stateNames[activeState]), p.textDim};
+  _infoItemCount = i;
+}
+
+static void buildDevicePage(const Palette& p) {
+  auto& it = _infoItems; uint8_t i = 0;
+  int vBat_mV = M5.Power.getBatteryVoltage();
+  int iBat_mA = M5.Power.getBatteryCurrent();
+  int pct = (vBat_mV - 3200) / 10;
+  if (pct < 0) pct = 0; if (pct > 100) pct = 100;
+  bool usb = _onUsb;
+  bool charging = usb && iBat_mA > 1;
+  bool full = usb && vBat_mV > 4100 && abs(iBat_mA) < 10;
+  const char* batState = full ? T(S_FULL) : (charging ? T(S_CHARGING) : (usb ? T(S_USB) : T(S_BATTERY_STATE)));
+  it[i++] = {_fmt("%d%% %s", pct, batState), full ? GREEN : (charging ? HOT : p.textDim)};
+  it[i++] = {_fmt(T(S_BATTERY), vBat_mV/1000, (abs(vBat_mV)%1000)/10), p.textDim};
+  it[i++] = {_fmt(T(S_CURRENT), iBat_mA), p.textDim};
+  it[i++] = {T(S_SYSTEM), p.text};
+  if (ownerName()[0]) it[i++] = {_fmt(T(S_OWNER), ownerName()), p.textDim};
+  uint32_t up = millis() / 1000;
+  it[i++] = {_fmt(T(S_UPTIME), up / 3600, (up / 60) % 60), p.textDim};
+  it[i++] = {_fmt(T(S_HEAP), ESP.getFreeHeap() / 1024), p.textDim};
+  it[i++] = {_fmt(T(S_BRIGHT), brightLevel), p.textDim};
+  it[i++] = {_fmt(T(S_BT), settings().bt ? (dataBtActive() ? T(S_LINKED) : "on") : T(S_OFF)), p.textDim};
+  _infoItemCount = i;
+}
+
+static void buildBluetoothPage(const Palette& p) {
+  auto& it = _infoItems; uint8_t i = 0;
+  bool linked = settings().bt && dataBtActive();
+  it[i++] = {linked ? T(S_LINKED) : (settings().bt ? T(S_DISCOVER) : T(S_OFF)),
+             linked ? GREEN : (settings().bt ? HOT : p.textDim)};
+  it[i++] = {btName, p.text};
+  uint8_t mac[6] = {0}; esp_read_mac(mac, ESP_MAC_BT);
+  it[i++] = {_fmt("%02X:%02X:%02X:%02X:%02X:%02X",
+    mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]), p.textDim};
+  if (linked) {
+    uint32_t age = (millis() - tama.lastUpdated) / 1000;
+    it[i++] = {_fmt(T(S_LAST_MSG), (unsigned long)age), p.textDim};
+  } else if (settings().bt) {
+    it[i++] = {T(S_TO_PAIR), p.text};
+    it[i++] = {T(S_OPEN_CLAUDE), p.textDim};
+    it[i++] = {T(S_DEV), p.textDim};
+    it[i++] = {T(S_HW_BUDDY), p.textDim};
+    it[i++] = {T(S_AUTO_CONNECT), p.textDim};
+  }
+  _infoItemCount = i;
+}
+
+static void buildCreditsPage(const Palette& p) {
+  auto& it = _infoItems; uint8_t i = 0;
+  it[i++] = {T(S_MADE_BY), p.textDim};
+  it[i++] = {T(S_FELIX), p.text};
+  it[i++] = {T(S_SOURCE), p.textDim};
+  it[i++] = {"github.com/anthropics", p.text};
+  it[i++] = {"/claude-desktop-buddy", p.text};
+  it[i++] = {T(S_HARDWARE), p.textDim};
+  it[i++] = {"M5StickS3", p.text};
+  it[i++] = {"ESP32-S3 + M5PM1", p.text};
+  _infoItemCount = i;
+}
+
+// --- Info header + render -------------------------------------------------
+
+static const char* _infoSectionTitle() {
+  static const StrID sectionIds[] = {S_H_ABOUT, S_H_BUTTONS, S_H_CLAUDE, S_H_DEVICE, S_H_BLUETOOTH, S_H_CREDITS};
+  return T(sectionIds[infoPage]);
+}
+
+void drawPasskey() {
+  const Palette& p = characterPalette();
+  spr.fillSprite(p.bg);
+  spr.setTextColor(p.textDim, p.bg);
+  spr.setCursor(8, 56);  spr.print(T(S_BT_PAIRING));
+  spr.setCursor(8, 184); spr.print(T(S_ENTER_DESKTOP));
+  spr.setTextColor(p.text, p.bg);
+  char b[8]; snprintf(b, sizeof(b), "%06lu", (unsigned long)blePasskey());
+  int tw = spr.textWidth(b);
+  spr.setCursor((W - tw) / 2, 110);
+  spr.print(b);
+}
+
+void drawInfo() {
+  const Palette& p = characterPalette();
+  const int TOP = 70;
+  spr.fillRect(0, TOP, W, H - TOP, p.bg);
+  spr.setTextSize(1);
+  int y = TOP + 2;
+
+  // Header: "Info" + page number + section title
+  spr.setTextColor(p.text, p.bg);
+  spr.setCursor(4, y); spr.print(T(S_INFO));
+  spr.setTextColor(p.textDim, p.bg);
+  spr.setCursor(W - 36, y); spr.printf("%u/%u", infoPage + 1, INFO_PAGES);
+  y += FH;
+  spr.setTextColor(p.body, p.bg);
+  spr.setCursor(4, y); spr.print(_infoSectionTitle());
+  y += FH + 2;
+
+  // Build page content
+  _fmtIdx = 0;
+  switch (infoPage) {
+    case 0: buildAboutPage(p); break;
+    case 1: buildButtonsPage(p); break;
+    case 2: buildClaudePage(p); break;
+    case 3: buildDevicePage(p); break;
+    case 4: buildBluetoothPage(p); break;
+    case 5: buildCreditsPage(p); break;
+  }
+  layoutItems(_infoItems, _infoItemCount);
+
+  // Render visible rows with scroll
+  uint8_t maxVis = (H - y - 2) / FH;
+  if (_pageScroll >= _pageRowCount) _pageScroll = 0;
+  if (maxVis > _pageRowCount - _pageScroll) maxVis = _pageRowCount - _pageScroll;
+
+  for (uint8_t r = 0; r < maxVis; r++) {
+    uint8_t ri = _pageScroll + r;
+    spr.setTextColor(_pageRowColor[ri], p.bg);
+    spr.setCursor(4, y + r * FH);
+    bool isLastVis = (r == maxVis - 1);
+    bool hasMore = (ri + 1 < _pageRowCount);
+    if (isLastVis && hasMore) {
+      char tmp[36]; memcpy(tmp, _pageRows[ri], 36);
+      int px = 0; uint8_t j = 0;
+      while (tmp[j] && px < 127 - 24) {
+        uint8_t bl; utf8cp(&tmp[j], bl); if (!bl) break;
+        px += charPx(bl); j += bl;
+      }
+      tmp[j] = 0;
+      spr.print(tmp); spr.print("...");
+    } else {
+      spr.print(_pageRows[ri]);
+    }
+  }
+
+  // Scroll indicator
+  if (_pageRowCount > maxVis + _pageScroll) {
+    spr.setTextColor(p.textDim, p.bg);
+    spr.setCursor(W - 8, H - FH - 2);
+    spr.print("v");
+  }
+}
+
 
 static void drawApproval() {
   const Palette& p = characterPalette();
@@ -832,31 +876,46 @@ static void drawPetHowTo(const Palette& p) {
   const int TOP = 70 + FH;
   spr.fillRect(0, TOP, W, H - TOP, p.bg);
   spr.setTextSize(1);
-  int y = TOP + 2;
-  auto ln = [&](uint16_t c, const char* s) {
-    spr.setTextColor(c, p.bg); spr.setCursor(6, y); spr.print(s); y += FH;
-  };
-  auto gap = [&]() { y += 4; };
 
-  y += FH;
+  _fmtIdx = 0;
+  auto& it = _infoItems; uint8_t i = 0;
+  it[i++] = {_fmt("%s %s %s", T(S_HOW_MOOD), T(S_APPROVE_FAST), T(S_DENY_LOTS)), p.textDim};
+  it[i++] = {_fmt("%s %s %s", T(S_HOW_FED), T(S_50K_TOKENS), T(S_LEVEL_UP)), p.textDim};
+  it[i++] = {_fmt("%s %s %s", T(S_HOW_ENERGY), T(S_FACE_DOWN), T(S_REFILLS)), p.textDim};
+  it[i++] = {_fmt("%s %s", T(S_IDLE_OFF), T(S_BTN_WAKE)), p.textDim};
+  it[i++] = {_fmt("%s %s", T(S_A_SCREEN_B_PAGE), T(S_HOLD_A_MENU)), p.textDim};
+  layoutItems(_infoItems, i);
 
-  ln(p.body,    T(S_HOW_MOOD));
-  ln(p.textDim, T(S_APPROVE_FAST));
-  ln(p.textDim, T(S_DENY_LOTS)); gap();
+  int y = TOP + 4;
+  uint8_t maxVis = (H - y - 2) / FH;
+  if (_pageScroll >= _pageRowCount) _pageScroll = 0;
+  if (maxVis > _pageRowCount - _pageScroll) maxVis = _pageRowCount - _pageScroll;
 
-  ln(p.body,    T(S_HOW_FED));
-  ln(p.textDim, T(S_50K_TOKENS));
-  ln(p.textDim, T(S_LEVEL_UP)); gap();
+  for (uint8_t r = 0; r < maxVis; r++) {
+    uint8_t ri = _pageScroll + r;
+    spr.setTextColor(_pageRowColor[ri], p.bg);
+    spr.setCursor(4, y + r * FH);
+    bool isLastVis = (r == maxVis - 1);
+    bool hasMore = (ri + 1 < _pageRowCount);
+    if (isLastVis && hasMore) {
+      char tmp[36]; memcpy(tmp, _pageRows[ri], 36);
+      int px = 0; uint8_t j = 0;
+      while (tmp[j] && px < 127 - 24) {
+        uint8_t bl; utf8cp(&tmp[j], bl); if (!bl) break;
+        px += charPx(bl); j += bl;
+      }
+      tmp[j] = 0;
+      spr.print(tmp); spr.print("...");
+    } else {
+      spr.print(_pageRows[ri]);
+    }
+  }
 
-  ln(p.body,    T(S_HOW_ENERGY));
-  ln(p.textDim, T(S_FACE_DOWN));
-  ln(p.textDim, T(S_REFILLS)); gap();
-
-  ln(p.textDim, T(S_IDLE_OFF));
-  ln(p.textDim, T(S_BTN_WAKE)); gap();
-
-  ln(p.textDim, T(S_A_SCREEN_B_PAGE));
-  ln(p.textDim, T(S_HOLD_A_MENU));
+  if (_pageRowCount > maxVis + _pageScroll) {
+    spr.setTextColor(p.textDim, p.bg);
+    spr.setCursor(W - 8, H - FH - 2);
+    spr.print("v");
+  }
 }
 
 void drawPet() {
@@ -1121,11 +1180,32 @@ void loop() {
       menuConfirm();
     } else if (displayMode == DISP_INFO) {
       beep(2400, 30);
-      infoPage = (infoPage + 1) % INFO_PAGES;
+      {
+        uint8_t maxVis = _pageRowCount > _pageScroll ? _pageRowCount - _pageScroll : 0;
+        if (maxVis > 10) maxVis = 10;
+        if (_pageScroll + maxVis < _pageRowCount) {
+          _pageScroll += maxVis;
+        } else {
+          _pageScroll = 0;
+          infoPage = (infoPage + 1) % INFO_PAGES;
+        }
+      }
     } else if (displayMode == DISP_PET) {
       beep(2400, 30);
-      petPage = (petPage + 1) % PET_PAGES;
-      applyDisplayMode();
+      if (petPage == 1 && _pageRowCount > 0) {
+        uint8_t maxVis = _pageRowCount > _pageScroll ? _pageRowCount - _pageScroll : 0;
+        if (maxVis > 10) maxVis = 10;
+        if (_pageScroll + maxVis < _pageRowCount) {
+          _pageScroll += maxVis;
+        } else {
+          _pageScroll = 0;
+          petPage = (petPage + 1) % PET_PAGES;
+          applyDisplayMode();
+        }
+      } else {
+        petPage = (petPage + 1) % PET_PAGES;
+        applyDisplayMode();
+      }
     } else {
       beep(2400, 30);
       msgScroll = (msgScroll >= 30) ? 0 : msgScroll + 1;
