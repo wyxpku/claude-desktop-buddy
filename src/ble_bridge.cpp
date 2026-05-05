@@ -5,6 +5,7 @@
 #include <BLESecurity.h>
 #include <BLE2902.h>
 #include <Arduino.h>
+#include <Preferences.h>
 #include <string.h>
 
 // Nordic UART Service UUIDs — every BLE serial example uses these, so
@@ -90,6 +91,21 @@ void bleInit(const char* deviceName) {
   BLEDevice::init(deviceName);
   // Request the biggest MTU we can get. macOS negotiates to 185 typically.
   BLEDevice::setMTU(517);
+
+  // Clear incompatible bonds if security model changed.
+  {
+    Preferences bp;
+    bp.begin("ble", true);
+    bool mitm = bp.getBool("mitm", false);
+    bp.end();
+    if (!mitm) {
+      bleClearBonds();
+      bp.begin("ble", false);
+      bp.putBool("mitm", true);
+      bp.end();
+      Serial.println("[ble] cleared bonds for MITM pairing");
+    }
+  }
 
   BLEDevice::setEncryptionLevel(ESP_BLE_SEC_ENCRYPT_MITM);
   BLEDevice::setSecurityCallbacks(new SecCallbacks());

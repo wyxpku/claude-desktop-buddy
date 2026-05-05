@@ -377,7 +377,7 @@ static void drawSettings() {
       strncpy(vb, T(rotIds[s.clockRot]), sizeof(vb)-1);
     } else if (i == 8) {
       uint8_t total = buddySpeciesCount() + (gifAvailable ? 1 : 0);
-      uint8_t pos   = buddyMode ? buddySpeciesIdx() + 1 : total;
+      uint8_t pos   = buddyMode ? buddySpeciesIdx() + 2 : 1;
       snprintf(vb, sizeof(vb), "%u/%u", pos, total);
     }
     if (vb[0]) {
@@ -463,12 +463,23 @@ static m5::rtc_time_t _clkTm;
 static m5::rtc_date_t _clkDt;
 uint32_t               _clkLastRead = 0;
 static bool            _onUsb       = false;
+static uint8_t _rtcBadCount = 0;
 static void clockRefreshRtc() {
   if (millis() - _clkLastRead < 1000) return;
   _clkLastRead = millis();
   _onUsb = M5.Power.isCharging() != m5::Power_Class::is_discharging;
-  _clkTm = M5.Rtc.getTime();
-  _clkDt = M5.Rtc.getDate();
+  m5::rtc_time_t tm = M5.Rtc.getTime();
+  m5::rtc_date_t dt = M5.Rtc.getDate();
+  // Reject garbage from I2C read failures (BM8563 returns 0xFF).
+  if (tm.hours < 0 || tm.hours > 23 || tm.minutes < 0 || tm.minutes > 59
+      || tm.seconds < 0 || tm.seconds > 59
+      || dt.month < 1 || dt.month > 12 || dt.date < 1 || dt.date > 31) {
+    if (++_rtcBadCount >= 5) _rtcValid = false;
+    return;
+  }
+  _rtcBadCount = 0;
+  _clkTm = tm;
+  _clkDt = dt;
 }
 
 static void clockUpdateOrient() {
@@ -508,10 +519,10 @@ static const StrID dowIds[] = { S_SUN, S_MON, S_TUE, S_WED, S_THU, S_FRI, S_SAT 
 static uint8_t clockDow() { return _clkDt.weekDay % 7; }
 static void drawClock() {
   const Palette& p = characterPalette();
-  char hm[6]; snprintf(hm, sizeof(hm), "%02u:%02u", _clkTm.hours, _clkTm.minutes);
-  char ss[4]; snprintf(ss, sizeof(ss), ":%02u", _clkTm.seconds);
+  char hm[6]; snprintf(hm, sizeof(hm), "%02d:%02d", _clkTm.hours, _clkTm.minutes);
+  char ss[4]; snprintf(ss, sizeof(ss), ":%02d", _clkTm.seconds);
   uint8_t mi = (_clkDt.month >= 1 && _clkDt.month <= 12) ? _clkDt.month - 1 : 0;
-  char dl[16]; snprintf(dl, sizeof(dl), "%s %02u", T(monIds[mi]), _clkDt.date);
+  char dl[16]; snprintf(dl, sizeof(dl), "%s %02d", T(monIds[mi]), _clkDt.date);
 
   if (clockOrient == 0) {
     paintedOrient = 0;
@@ -532,8 +543,8 @@ static void drawClock() {
 
   if (repaint || _clkTm.seconds != lastSec) {
     lastSec = _clkTm.seconds;
-    char wdl[16]; snprintf(wdl, sizeof(wdl), "%s %s %02u", T(dowIds[clockDow()]), T(monIds[mi]), _clkDt.date);
-    char ssl[3]; snprintf(ssl, sizeof(ssl), "%02u", _clkTm.seconds);
+    char wdl[16]; snprintf(wdl, sizeof(wdl), "%s %s %02d", T(dowIds[clockDow()]), T(monIds[mi]), _clkDt.date);
+    char ssl[3]; snprintf(ssl, sizeof(ssl), "%02d", _clkTm.seconds);
     M5.Display.setTextDatum(MC_DATUM);
     M5.Display.setTextSize(2); M5.Display.setTextColor(p.text, p.bg);    M5.Display.drawString(hm, 170, 42);
     M5.Display.setTextSize(1); M5.Display.setTextColor(p.textDim, p.bg); M5.Display.drawString(ssl, 170, 72);
@@ -623,8 +634,8 @@ static uint8_t wrapInto(const char* in, char out[][36], uint8_t maxRows, uint8_t
     uint8_t bl;
     utf8cp(p, bl);
     if (bl == 0) break;
-    // Zero-width code-span markers: copy to output but don't add pixel width
-    if (bl == 1 && ((uint8_t)*p == 0x01 || (uint8_t)*p == 0x02)) {
+    // Zero-width markers (\x01-\x06): copy to output but don't add pixel width
+    if (bl == 1 && (uint8_t)*p >= 0x01 && (uint8_t)*p <= 0x06) {
       if (col + 1 >= 36) { out[row][col] = 0; if (++row >= maxRows) return row; col = 0; }
       out[row][col++] = *p;
       out[row][col] = 0;
@@ -790,13 +801,15 @@ static const char* _infoSectionTitle() {
 void drawPasskey() {
   const Palette& p = characterPalette();
   spr.fillSprite(p.bg);
+  spr.setTextSize(1);
   spr.setTextColor(p.textDim, p.bg);
   spr.setCursor(8, 56);  spr.print(T(S_BT_PAIRING));
   spr.setCursor(8, 184); spr.print(T(S_ENTER_DESKTOP));
+  spr.setTextSize(2);
   spr.setTextColor(p.text, p.bg);
   char b[8]; snprintf(b, sizeof(b), "%06lu", (unsigned long)blePasskey());
   int tw = spr.textWidth(b);
-  spr.setCursor((W - tw) / 2, 110);
+  spr.setCursor((W - tw) / 2, 108);
   spr.print(b);
 }
 
@@ -1122,10 +1135,19 @@ void drawPet() {
   else drawPetHowTo(p);
 }
 
-// Print a line, rendering `code` spans in highlight color without backticks
-static void printColored(const char* s, uint16_t baseColor, uint16_t codeColor, uint16_t bgColor) {
+// Print a line, rendering markdown markers:
+//   \x01...\x02  code span  → codeColor
+//   \x03...\x04  bold       → brightColor (usually p.text)
+//   \x05         quote line → baseColor with 2px indent
+//   \x06         code block → codeColor with 2px indent
+static void printColored(const char* s, uint16_t baseColor, uint16_t codeColor, uint16_t brightColor, uint16_t bgColor) {
   const char* p = s;
-  spr.setTextColor(baseColor, bgColor);
+  int indent = 0;
+  if (*p == '\x05') { indent = 2; p++; }
+  else if (*p == '\x06') { indent = 2; spr.setTextColor(codeColor, bgColor); }
+  else { spr.setTextColor(baseColor, bgColor); }
+  int curX = spr.getCursorX() + indent;
+  spr.setCursor(curX, spr.getCursorY());
   while (*p) {
     if (*p == '\x01') {
       p++;
@@ -1136,6 +1158,15 @@ static void printColored(const char* s, uint16_t baseColor, uint16_t codeColor, 
         p++; // skip \x02
         spr.setTextColor(baseColor, bgColor);
       }
+    } else if (*p == '\x03') {
+      p++;
+      const char* end = strchr(p, '\x04');
+      if (end) {
+        spr.setTextColor(brightColor, bgColor);
+        while (p < end) { spr.print(*p); p++; }
+        p++; // skip \x04
+        spr.setTextColor(baseColor, bgColor);
+      }
     } else if ((uint8_t)*p >= 0x20) {
       spr.print(*p); p++;
     } else {
@@ -1144,11 +1175,40 @@ static void printColored(const char* s, uint16_t baseColor, uint16_t codeColor, 
   }
 }
 
-// Replace `code` with \x01code\x02 markers (same pixel width as ASCII,
-// so wrapInto computes correct breaks; printColored detects them).
-static void markCodeSpans(const char* src, char* dst, size_t dstLen) {
+// Replace markdown with zero-width control markers for printColored:
+//   `code`       → \x01code\x02
+//   **bold**     → \x03bold\x04
+//   - item / * item → • item
+//   > quote      → \x05quote
+//   ``` ``` block lines → \x06line
+static void markMd(const char* src, char* dst, size_t dstLen) {
   size_t j = 0;
-  while (*src && j < dstLen - 2) {
+
+  // Debug: log raw input if it contains **
+  static bool _mdDbg = true;
+  if (_mdDbg && strstr(src, "**")) {
+    _mdDbg = false;
+    Serial.printf("[md] in:  %s\n", src);
+  }
+
+  if (src[0] == '`' && src[1] == '`' && src[2] == '`') {
+    src += 3;
+    while (*src == ' ' || (*src >= 'a' && *src <= 'z')) src++;
+    dst[j++] = '\x06';
+    while (*src && j < dstLen - 1) dst[j++] = *src++;
+    dst[j] = 0;
+    return;
+  }
+  if (src[0] == '>') {
+    src++;
+    if (*src == ' ') src++;
+    dst[j++] = '\x05';
+  } else if ((src[0] == '-' || src[0] == '*') && src[1] == ' ') {
+    dst[j++] = 0xE2; dst[j++] = 0x80; dst[j++] = 0xA2; // • (U+2022)
+    src += 2;
+  }
+
+  while (*src && j < dstLen - 4) {
     if (*src == '`') {
       src++;
       const char* end = strchr(src, '`');
@@ -1156,14 +1216,31 @@ static void markCodeSpans(const char* src, char* dst, size_t dstLen) {
         dst[j++] = '\x01';
         while (src < end && j < dstLen - 2) dst[j++] = *src++;
         dst[j++] = '\x02';
-        src++; // skip closing backtick
+        src++;
       }
-      // unmatched backtick: skip it
-    } else {
-      dst[j++] = *src++;
+      continue;
     }
+    if (*src == '*' && src[1] == '*') {
+      src += 2;
+      const char* end = strstr(src, "**");
+      if (end) {
+        dst[j++] = '\x03';
+        while (src < end && j < dstLen - 2) dst[j++] = *src++;
+        dst[j++] = '\x04';
+        src += 2;
+      }
+      continue;
+    }
+    dst[j++] = *src++;
   }
   dst[j] = 0;
+
+  // Debug: log output
+  static bool _mdDbg2 = true;
+  if (!_mdDbg && _mdDbg2) {
+    _mdDbg2 = false;
+    Serial.printf("[md] out: %s\n", dst);
+  }
 }
 
 void drawHUD() {
@@ -1178,9 +1255,18 @@ void drawHUD() {
 
   if (tama.nLines == 0) {
     char mb[96];
-    markCodeSpans(tama.msg, mb, sizeof(mb));
+    markMd(tama.msg, mb, sizeof(mb));
     spr.setCursor(4, H - LH - 2);
-    printColored(mb, p.text, p.body, p.bg);
+    printColored(mb, p.text, p.body, p.body, p.bg);
+    // If text overflows horizontally, overlay "..." at the right edge
+    int ellW = spr.textWidth("...");
+    int maxX = W - 4;
+    if (spr.getCursorX() > maxX) {
+      spr.fillRect(maxX - ellW - 2, H - LH - 2, ellW + 4, LH, p.bg);
+      spr.setTextColor(p.textDim, p.bg);
+      spr.setCursor(maxX - ellW, H - LH - 2);
+      spr.print("...");
+    }
     return;
   }
 
@@ -1188,11 +1274,21 @@ void drawHUD() {
   static uint8_t srcOf[32];
   char markBuf[96];
   uint8_t nDisp = 0;
+  bool truncated = false;
   for (uint8_t i = 0; i < tama.nLines && nDisp < 32; i++) {
-    markCodeSpans(tama.lines[i], markBuf, sizeof(markBuf));
-    uint8_t got = wrapInto(markBuf, &disp[nDisp], 32 - nDisp, WIDTH);
+    markMd(tama.lines[i], markBuf, sizeof(markBuf));
+    uint8_t room = 32 - nDisp;
+    uint8_t got = wrapInto(markBuf, &disp[nDisp], room, WIDTH);
     for (uint8_t j = 0; j < got; j++) srcOf[nDisp + j] = i;
     nDisp += got;
+    if (nDisp >= 32 && i + 1 < tama.nLines) truncated = true;
+  }
+  // If oldest entries were dropped, mark first row with "..."
+  if (truncated) {
+    char* r = disp[0];
+    size_t len = strlen(r);
+    if (len + 3 < 36) memcpy(r + len, "...", 4);
+    else { memcpy(r + 32, "...", 4); }
   }
 
   uint8_t maxBack = (nDisp > SHOW) ? (nDisp - SHOW) : 0;
@@ -1206,7 +1302,7 @@ void drawHUD() {
     bool fresh = (srcOf[row] == newest) && (msgScroll == 0);
     uint16_t base = fresh ? p.text : p.textDim;
     spr.setCursor(4, H - AREA + 2 + i * LH);
-    printColored(disp[row], base, p.body, p.bg);
+    printColored(disp[row], base, p.body, p.body, p.bg);
   }
   if (msgScroll > 0) {
     spr.setTextColor(p.body, p.bg);
