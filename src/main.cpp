@@ -574,7 +574,7 @@ bool checkShake() {
   float mag = sqrtf(ax*ax + ay*ay + az*az);
   float delta = fabsf(mag - accelBaseline);
   accelBaseline = accelBaseline * 0.95f + mag * 0.05f;
-  return delta > 0.8f;
+  return delta > 1.2f;
 }
 
 // Advance past one UTF-8 codepoint, return its byte length
@@ -623,6 +623,14 @@ static uint8_t wrapInto(const char* in, char out[][36], uint8_t maxRows, uint8_t
     uint8_t bl;
     utf8cp(p, bl);
     if (bl == 0) break;
+    // Zero-width code-span markers: copy to output but don't add pixel width
+    if (bl == 1 && ((uint8_t)*p == 0x01 || (uint8_t)*p == 0x02)) {
+      if (col + 1 >= 36) { out[row][col] = 0; if (++row >= maxRows) return row; col = 0; }
+      out[row][col++] = *p;
+      out[row][col] = 0;
+      p++;
+      continue;
+    }
     int cpx = charPx(bl);
     if (col + bl >= 36 || (col > 0 && px + cpx > maxPx)) {
       out[row][col] = 0;
@@ -1285,9 +1293,13 @@ void loop() {
   }
 
   // shake → dizzy
+  static uint32_t lastShakeTrigger = 0;
   if (now - lastShakeCheck > 50) {
     lastShakeCheck = now;
-    if (!menuOpen && !screenOff && checkShake() && (int32_t)(now - oneShotUntil) >= 0) {
+    if (!menuOpen && !screenOff && checkShake()
+        && (int32_t)(now - oneShotUntil) >= 0
+        && (int32_t)(now - lastShakeTrigger) >= 5000) {
+      lastShakeTrigger = now;
       wake();
       triggerOneShot(P_DIZZY, 2000);
       Serial.println("shake: dizzy");

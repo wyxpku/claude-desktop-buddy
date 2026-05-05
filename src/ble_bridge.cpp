@@ -118,8 +118,8 @@ void bleInit(const char* deviceName) {
   svc->start();
 
   BLESecurity* sec = new BLESecurity();
-  sec->setAuthenticationMode(ESP_LE_AUTH_REQ_SC_BOND);
-  sec->setCapability(ESP_IO_CAP_NONE);
+  sec->setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
+  sec->setCapability(ESP_IO_CAP_OUT);
   sec->setKeySize(16);
   sec->setInitEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
   sec->setRespEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
