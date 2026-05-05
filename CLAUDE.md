@@ -68,37 +68,9 @@ Two modes selected by `buddyMode` flag: GIF characters from LittleFS (manifest.j
 
 All in `"buddy"` namespace via Preferences. Settings struct in stats.h with `settingsSave()`/`settingsLoad()`. Species index: `species` key (0xFF = GIF mode).
 
-## Bridge (cc-buddy-bridge)
+## Bridge dependency
 
-Separate Python package at `/Users/ethan/workspace/cc-buddy-bridge/`. Connects Claude Code CLI sessions to the stick over BLE.
-
-### Architecture
-
-```
-Claude Code CLI (hooks + transcript JSONL files)
-  → hooks/ (PreToolUse, Stop hooks via cc-buddy-bridge installer)
-    → daemon.py (Daemon class, async event loop)
-      ├→ jsonl_tailer.py (watches transcript .jsonl, extracts tokens + assistant text)
-      ├→ state.py (Session, Entry, PendingPermission, aggregated State)
-      ├→ protocol.py (build_heartbeat → JSON, sanitize_for_stick, _format_entry)
-      ├→ ble.py (BuddyBLE: scan, connect, subscribe TX, write RX, reconnect loop)
-      └→ ipc.py (Unix socket for CLI ↔ daemon communication)
-```
-
-### Key bridge files
-
-| File | Role |
-|---|---|
-| `daemon.py` | Main event loop, wires all components, handles permission responses from stick |
-| `ble.py` | BLE client: scan by name prefix "Claude", LE SC pairing with 12-retry loop, auto-reconnect with backoff |
-| `protocol.py` | `build_heartbeat()` assembles JSON snapshot, `sanitize_for_stick()` strips non-BMP, preserves markdown |
-| `state.py` | In-memory state: sessions dict, entries list (newest-first, reversed on serialize), token counters |
-| `jsonl_tailer.py` | Tails Claude Code transcript JSONL files, fires callbacks for token counts and new assistant text |
-| `hooks/` | Claude Code hook scripts (PreToolUse for permissions, Stop for turn events) |
-
-### Wire protocol
-
-Heartbeat JSON sent every ~10s over BLE: `{"total", "running", "waiting", "msg", "entries", "tokens", "tokens_today", "completed?", "prompt?"}`. Entries formatted as `"HH:MM text"` (max 80 chars). Markdown `**bold**` and `` `code` `` preserved for firmware rendering. Permission responses from stick: `{"cmd":"permission","id":"...","decision":"once|deny"}`.
+This firmware requires [cc-buddy-bridge](https://github.com/wyxpku/cc-buddy-bridge) — a Python daemon that connects Claude Code CLI sessions to the stick over BLE. The bridge watches Claude Code's transcript JSONL files, aggregates session state, and sends heartbeat JSON snapshots (~every 10s) to the firmware. It also receives permission responses (approve/deny) from the stick and relays them back to Claude Code. Source at `/Users/ethan/workspace/cc-buddy-bridge/`.
 
 ## Working principles
 
