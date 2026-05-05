@@ -27,3 +27,6 @@ void characterGetRect(int* x, int* y, int* w, int* h);
 
 // Override the centering area (0,0 = use target dimensions)
 void characterSetArea(int w, int h);
+
+// Scale factor for GIF rendering (default 1)
+void characterSetScale(int scale);

@@ -39,12 +39,12 @@ static const int   PEEK_TOP = 70;
 static bool        peekMode = false;
 static lgfx::v1::LGFXBase* _tgt = &spr;
 static int areaW = 0, areaH = 0;  // 0 = use target dimensions
+static int _gifScale = 1;
 static void gifPlace() {
-  int outW = peekMode ? gifW / 2 : gifW;
-  int outH = peekMode ? gifH / 2 : gifH;
+  int outW = peekMode ? gifW / 2 : gifW * _gifScale;
+  int outH = peekMode ? gifH / 2 : gifH * _gifScale;
   int tw = areaW > 0 ? areaW : _tgt->width();
   gifX = (tw - outW) / 2;
-  // Portrait: center in top 110px (leave room for HUD). Landscape: center in full 135px.
   int vArea = peekMode ? PEEK_TOP : (areaH > 0 ? areaH : 110);
   gifY = (vArea - outH) / 2;
 }
@@ -112,15 +112,26 @@ static void gifDrawCb(GIFDRAW* d) {
     return;
   }
 
-  int y = gifY + srcY;
-  if (y < 0 || y >= spr.height()) return;
-  int x0 = gifX + d->iX;
+  int y = gifY + srcY * _gifScale;
+  if (y < 0 || y >= _tgt->height()) return;
+  int x0 = gifX + d->iX * _gifScale;
   int w  = d->iWidth;
   if (w > 256) w = 256;
-  if (x0 < 0) { src -= x0; w += x0; x0 = 0; }
-  if (x0 + w > spr.width()) w = spr.width() - x0;
-  if (w <= 0) return;
-  for (int i = 0; i < w; i++) put(x0 + i, y, src[i]);
+  if (_gifScale == 1) {
+    if (x0 < 0) { src -= x0; w += x0; x0 = 0; }
+    if (x0 + w > _tgt->width()) w = _tgt->width() - x0;
+    if (w <= 0) return;
+    for (int i = 0; i < w; i++) put(x0 + i, y, src[i]);
+  } else {
+    for (int i = 0; i < w; i++) {
+      uint16_t c = (hasT && src[i] == t) ? pal.bg : pal16[src[i]];
+      for (int sy = 0; sy < _gifScale; sy++) {
+        int dy = y + sy;
+        if (dy >= _tgt->height()) break;
+        _tgt->drawFastHLine(x0 + i * _gifScale, dy, _gifScale, c);
+      }
+    }
+  }
 }
 
 // --- Public ---------------------------------------------------------
@@ -236,12 +247,21 @@ const Palette& characterPalette() { return pal; }
 
 void characterGetRect(int* x, int* y, int* w, int* h) {
   if (!gifOpen) { *x = *y = *w = *h = 0; return; }
-  int ow = peekMode ? gifW / 2 : gifW;
-  int oh = peekMode ? gifH / 2 : gifH;
+  int ow = peekMode ? gifW / 2 : gifW * _gifScale;
+  int oh = peekMode ? gifH / 2 : gifH * _gifScale;
   *x = gifX; *y = gifY; *w = ow; *h = oh;
 }
 
-void characterSetArea(int w, int h) { areaW = w; areaH = h; }
+void characterSetArea(int w, int h) {
+  areaW = w; areaH = h;
+  if (gifOpen) gifPlace();
+}
+
+void characterSetScale(int s) {
+  if (s == _gifScale) return;
+  _gifScale = s;
+  if (gifOpen) gifPlace();
+}
 
 void characterRenderTo(lgfx::v1::LGFXBase* tgt, int cx, int cy) {
   if (!gifOpen) return;

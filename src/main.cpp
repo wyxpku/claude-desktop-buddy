@@ -9,6 +9,7 @@ using namespace lgfx::fonts;
 
 M5Canvas spr(&M5.Display);
 M5Canvas landSpr(&M5.Display);
+static M5Canvas* _mc = nullptr;  // modal canvas override (landSpr in landscape)
 
 // Advertise as "Claude-XXXX" (last two BT MAC bytes) so multiple sticks
 // in one room are distinguishable in the desktop picker. Name persists in
@@ -294,93 +295,90 @@ static void applyBtSetting(uint8_t idx) {
 }
 
 const int MENU_HINT_H = 14;
+#define MC (*(_mc ? _mc : &spr))
+
 static void drawMenuHints(const Palette& p, int mx, int mw, int hy,
                           const char* downLbl = "A", const char* rightLbl = "B") {
-  spr.drawFastHLine(mx + 6, hy - 4, mw - 12, p.textDim);
-  spr.setTextColor(p.textDim, PANEL);
+  MC.drawFastHLine(mx + 6, hy - 4, mw - 12, p.textDim);
+  MC.setTextColor(p.textDim, PANEL);
   int x = mx + 8;
-  spr.setCursor(x, hy); spr.print(downLbl);
-  x += spr.textWidth(downLbl) + 4;
-  spr.fillTriangle(x, hy + 1, x + 6, hy + 1, x + 3, hy + 6, p.textDim);
+  MC.setCursor(x, hy); MC.print(downLbl);
+  x += MC.textWidth(downLbl) + 4;
+  MC.fillTriangle(x, hy + 1, x + 6, hy + 1, x + 3, hy + 6, p.textDim);
   x = mx + mw / 2 + 4;
-  spr.setCursor(x, hy); spr.print(rightLbl);
-  x += spr.textWidth(rightLbl) + 4;
-  spr.fillTriangle(x, hy, x, hy + 6, x + 5, hy + 3, p.textDim);
+  MC.setCursor(x, hy); MC.print(rightLbl);
+  x += MC.textWidth(rightLbl) + 4;
+  MC.fillTriangle(x, hy, x, hy + 6, x + 5, hy + 3, p.textDim);
 }
 
 static void drawSettings() {
   const Palette& p = characterPalette();
-  int mw = 118, mh = 16 + SETTINGS_N * FH + MENU_HINT_H;
-  int mx = (W - mw) / 2, my = (H - mh) / 2;
-  spr.fillRoundRect(mx, my, mw, mh, 4, PANEL);
-  spr.drawRoundRect(mx, my, mw, mh, 4, p.textDim);
-  spr.setTextSize(1);
+  bool _l = _mc != nullptr;
+  int sw = _l ? 240 : W, sh = _l ? 135 : H;
+  int mw = _l ? 160 : 118;
+  int maxVis = (sh - 16 - MENU_HINT_H) / FH;
 
   if (settingsSubPage == 1) {
-    // BT sub-page — same panel, different content
+    // BT sub-page — fixed layout, just ensure it fits
+    int mh = sh - 8;
+    int mx = (sw - mw) / 2, my = 4;
+    MC.fillRoundRect(mx, my, mw, mh, 4, PANEL);
+    MC.drawRoundRect(mx, my, mw, mh, 4, p.textDim);
+    MC.setTextSize(1);
     uint8_t bondMacs[8][6];
     int bondCount = settings().bt ? bleGetBonds(bondMacs, 8) : 0;
     int y = my + 8;
-
-    // Section: title (selectable — btSel 0 toggles BT)
     bool titleSel = (btSel == 0);
-    spr.setTextColor(titleSel ? p.text : p.textDim, PANEL);
-    spr.setCursor(mx + 6, y);
-    spr.print(titleSel ? "> " : "  ");
-    spr.print(T(S_SET_BLUETOOTH));
-    // Status indicator (connected / on / off)
+    MC.setTextColor(titleSel ? p.text : p.textDim, PANEL);
+    MC.setCursor(mx + 6, y);
+    MC.print(titleSel ? "> " : "  ");
+    MC.print(T(S_SET_BLUETOOTH));
     const char* st = bleConnected() ? T(S_LINKED) : (settings().bt ? T(S_ON) : T(S_OFF));
     uint16_t stCol = bleConnected() ? GREEN : (settings().bt ? GREEN : p.textDim);
-    spr.setTextColor(stCol, PANEL);
-    spr.setCursor(mx + mw - spr.textWidth(st) - 6, y);
-    spr.print(st);
+    MC.setTextColor(stCol, PANEL);
+    MC.setCursor(mx + mw - MC.textWidth(st) - 6, y);
+    MC.print(st);
     y += FH;
-    // Separator line
-    spr.drawFastHLine(mx + 6, y, mw - 12, p.textDim);
+    MC.drawFastHLine(mx + 6, y, mw - 12, p.textDim);
     y += 4;
-
-    // Section: paired devices
-    spr.setTextColor(p.textDim, PANEL);
-    spr.setCursor(mx + 6, y);
-    spr.print(T(S_BT_DEVICES));
-    // Device count on the right
+    MC.setTextColor(p.textDim, PANEL);
+    MC.setCursor(mx + 6, y);
+    MC.print(T(S_BT_DEVICES));
     char cntBuf[8];
     snprintf(cntBuf, sizeof(cntBuf), "%d", bondCount);
-    spr.setCursor(mx + mw - spr.textWidth(cntBuf) - 6, y);
-    spr.print(cntBuf);
+    MC.setCursor(mx + mw - MC.textWidth(cntBuf) - 6, y);
+    MC.print(cntBuf);
     y += FH;
     if (bondCount == 0) {
-      spr.setTextColor(p.textDim, PANEL);
-      spr.setCursor(mx + 10, y);
-      spr.print(T(S_BT_NO_DEVICE));
+      MC.setTextColor(p.textDim, PANEL);
+      MC.setCursor(mx + 10, y);
+      MC.print(T(S_BT_NO_DEVICE));
       y += FH;
     } else {
-      for (int d = 0; d < bondCount && d < 4; d++) {
-        spr.setTextColor(p.textDim, PANEL);
-        spr.setCursor(mx + 10, y);
-        spr.printf("%02X:%02X:%02X:%02X:%02X:%02X",
+      int maxDev = (my + mh - 12 - y - 4 - 2 * FH) / FH;
+      for (int d = 0; d < bondCount && d < maxDev; d++) {
+        MC.setTextColor(p.textDim, PANEL);
+        MC.setCursor(mx + 10, y);
+        MC.printf("%02X:%02X:%02X:%02X:%02X:%02X",
           bondMacs[d][0], bondMacs[d][1], bondMacs[d][2],
           bondMacs[d][3], bondMacs[d][4], bondMacs[d][5]);
         y += FH;
       }
     }
     y += 2;
-    // Separator
-    spr.drawFastHLine(mx + 6, y, mw - 12, p.textDim);
+    MC.drawFastHLine(mx + 6, y, mw - 12, p.textDim);
     y += 4;
-
-    // Selectable actions: btSel 1=clear, 2=back
     for (int i = 1; i <= 2; i++) {
       bool sel = (btSel == i);
-      spr.setTextColor(sel ? p.text : p.textDim, PANEL);
-      spr.setCursor(mx + 6, y);
-      spr.print(sel ? "> " : "  ");
+      MC.setTextColor(sel ? p.text : p.textDim, PANEL);
+      MC.setCursor(mx + 6, y);
+      MC.print(sel ? "> " : "  ");
       if (i == 1) {
         bool armed = btClearArmed && (int32_t)(millis() - btConfirmUntil) < 0;
-        if (armed) spr.setTextColor(HOT, PANEL);
-        spr.print(armed ? T(S_REALLY) : T(S_BT_CLEAR));
+        if (armed) MC.setTextColor(HOT, PANEL);
+        MC.print(armed ? T(S_REALLY) : T(S_BT_CLEAR));
       } else {
-        spr.print(T(S_BT_BACK));
+        MC.print(T(S_BT_BACK));
       }
       y += FH;
     }
@@ -388,15 +386,25 @@ static void drawSettings() {
     return;
   }
 
+  // Main settings page with scrolling
+  if (maxVis > SETTINGS_N) maxVis = SETTINGS_N;
+  int scr = max(0, min((int)settingsSel - maxVis + 1, (int)SETTINGS_N - maxVis));
+  int mh = 16 + maxVis * FH + MENU_HINT_H;
+  int mx = (sw - mw) / 2, my = (sh - mh) / 2;
+  MC.fillRoundRect(mx, my, mw, mh, 4, PANEL);
+  MC.drawRoundRect(mx, my, mw, mh, 4, p.textDim);
+  MC.setTextSize(1);
+
   Settings& s = settings();
   bool vals[] = { s.sound, s.bt, s.wifi, s.led, s.hud };
-  for (int i = 0; i < SETTINGS_N; i++) {
+  for (int vi = 0; vi < maxVis; vi++) {
+    int i = scr + vi;
     bool sel = (i == settingsSel);
-    int iy = my + 8 + i * FH;
-    spr.setTextColor(sel ? p.text : p.textDim, PANEL);
-    spr.setCursor(mx + 6, iy);
-    spr.print(sel ? "> " : "  ");
-    spr.print(T(settingsIds[i]));
+    int iy = my + 8 + vi * FH;
+    MC.setTextColor(sel ? p.text : p.textDim, PANEL);
+    MC.setCursor(mx + 6, iy);
+    MC.print(sel ? "> " : "  ");
+    MC.print(T(settingsIds[i]));
     char vb[16] = ""; uint16_t vc = p.textDim;
     if (i == 0) {
       snprintf(vb, sizeof(vb), "%u/4", brightLevel);
@@ -414,9 +422,9 @@ static void drawSettings() {
       snprintf(vb, sizeof(vb), "%u/%u", pos, total);
     }
     if (vb[0]) {
-      spr.setTextColor(vc, PANEL);
-      spr.setCursor(mx + mw - spr.textWidth(vb) - 6, iy);
-      spr.print(vb);
+      MC.setTextColor(vc, PANEL);
+      MC.setCursor(mx + mw - MC.textWidth(vb) - 6, iy);
+      MC.print(vb);
     }
   }
   drawMenuHints(p, mx, mw, my + mh - 12, T(S_NEXT), T(S_CHANGE));
@@ -424,20 +432,27 @@ static void drawSettings() {
 
 static void drawReset() {
   const Palette& p = characterPalette();
-  int mw = 118, mh = 16 + RESET_N * FH + MENU_HINT_H;
-  int mx = (W - mw) / 2, my = (H - mh) / 2;
-  spr.fillRoundRect(mx, my, mw, mh, 4, PANEL);
-  spr.drawRoundRect(mx, my, mw, mh, 4, HOT);
-  spr.setTextSize(1);
-  for (int i = 0; i < RESET_N; i++) {
+  bool _l = _mc != nullptr;
+  int sw = _l ? 240 : W, sh = _l ? 135 : H;
+  int mw = _l ? 160 : 118;
+  int maxVis = (sh - 16 - MENU_HINT_H) / FH;
+  if (maxVis > RESET_N) maxVis = RESET_N;
+  int scr = max(0, min((int)resetSel - maxVis + 1, (int)RESET_N - maxVis));
+  int mh = 16 + maxVis * FH + MENU_HINT_H;
+  int mx = (sw - mw) / 2, my = (sh - mh) / 2;
+  MC.fillRoundRect(mx, my, mw, mh, 4, PANEL);
+  MC.drawRoundRect(mx, my, mw, mh, 4, HOT);
+  MC.setTextSize(1);
+  for (int vi = 0; vi < maxVis; vi++) {
+    int i = scr + vi;
     bool sel = (i == resetSel);
-    spr.setTextColor(sel ? p.text : p.textDim, PANEL);
-    spr.setCursor(mx + 6, my + 8 + i * FH);
-    spr.print(sel ? "> " : "  ");
+    MC.setTextColor(sel ? p.text : p.textDim, PANEL);
+    MC.setCursor(mx + 6, my + 8 + vi * FH);
+    MC.print(sel ? "> " : "  ");
     bool armed = (i == resetConfirmIdx) &&
                  (int32_t)(millis() - resetConfirmUntil) < 0;
-    if (armed) spr.setTextColor(HOT, PANEL);
-    spr.print(armed ? T(S_REALLY) : T(resetIds[i]));
+    if (armed) MC.setTextColor(HOT, PANEL);
+    MC.print(armed ? T(S_REALLY) : T(resetIds[i]));
   }
   drawMenuHints(p, mx, mw, my + mh - 12);
 }
@@ -461,23 +476,30 @@ void menuConfirm() {
 
 void drawMenu() {
   const Palette& p = characterPalette();
-  int mw = 118, mh = 16 + MENU_N * FH + MENU_HINT_H;
-  int mx = (W - mw) / 2, my = (H - mh) / 2;
-  spr.fillRoundRect(mx, my, mw, mh, 4, PANEL);
-  spr.drawRoundRect(mx, my, mw, mh, 4, p.textDim);
-  spr.setTextSize(1);
-  for (int i = 0; i < MENU_N; i++) {
+  bool _l = _mc != nullptr;
+  int sw = _l ? 240 : W, sh = _l ? 135 : H;
+  int mw = _l ? 160 : 118;
+  int maxVis = (sh - 16 - MENU_HINT_H) / FH;
+  if (maxVis > MENU_N) maxVis = MENU_N;
+  int scr = max(0, min((int)menuSel - maxVis + 1, (int)MENU_N - maxVis));
+  int mh = 16 + maxVis * FH + MENU_HINT_H;
+  int mx = (sw - mw) / 2, my = (sh - mh) / 2;
+  MC.fillRoundRect(mx, my, mw, mh, 4, PANEL);
+  MC.drawRoundRect(mx, my, mw, mh, 4, p.textDim);
+  MC.setTextSize(1);
+  for (int vi = 0; vi < maxVis; vi++) {
+    int i = scr + vi;
     bool sel = (i == menuSel);
-    int iy = my + 8 + i * FH;
-    spr.setTextColor(sel ? p.text : p.textDim, PANEL);
-    spr.setCursor(mx + 6, iy);
-    spr.print(sel ? "> " : "  ");
-    spr.print(T(menuIds[i]));
+    int iy = my + 8 + vi * FH;
+    MC.setTextColor(sel ? p.text : p.textDim, PANEL);
+    MC.setCursor(mx + 6, iy);
+    MC.print(sel ? "> " : "  ");
+    MC.print(T(menuIds[i]));
     if (i == 4) {
       const char* dv = dataDemo() ? T(S_ON) : T(S_OFF);
-      spr.setTextColor(dataDemo() ? GREEN : p.textDim, PANEL);
-      spr.setCursor(mx + mw - spr.textWidth(dv) - 6, iy);
-      spr.print(dv);
+      MC.setTextColor(dataDemo() ? GREEN : p.textDim, PANEL);
+      MC.setCursor(mx + mw - MC.textWidth(dv) - 6, iy);
+      MC.print(dv);
     }
   }
   drawMenuHints(p, mx, mw, my + mh - 12);
@@ -960,16 +982,16 @@ static void drawApproval() {
   }
 }
 
-static void tinyHeart(int x, int y, bool filled, uint16_t col) {
+static void tinyHeart(lgfx::v1::LGFXBase* tgt, int x, int y, bool filled, uint16_t col) {
   if (filled) {
-    spr.fillCircle(x - 2, y, 2, col);
-    spr.fillCircle(x + 2, y, 2, col);
-    spr.fillTriangle(x - 4, y + 1, x + 4, y + 1, x, y + 5, col);
+    tgt->fillCircle(x - 2, y, 2, col);
+    tgt->fillCircle(x + 2, y, 2, col);
+    tgt->fillTriangle(x - 4, y + 1, x + 4, y + 1, x, y + 5, col);
   } else {
-    spr.drawCircle(x - 2, y, 2, col);
-    spr.drawCircle(x + 2, y, 2, col);
-    spr.drawLine(x - 4, y + 1, x, y + 5, col);
-    spr.drawLine(x + 4, y + 1, x, y + 5, col);
+    tgt->drawCircle(x - 2, y, 2, col);
+    tgt->drawCircle(x + 2, y, 2, col);
+    tgt->drawLine(x - 4, y + 1, x, y + 5, col);
+    tgt->drawLine(x + 4, y + 1, x, y + 5, col);
   }
 }
 
@@ -987,7 +1009,7 @@ static void drawPetStats(const Palette& p) {
   uint8_t mood = statsMoodTier();
   uint16_t moodCol = (mood >= 3) ? RED : (mood >= 2) ? HOT : p.textDim;
   int icy = iconY(y);
-  for (int i = 0; i < 4; i++) tinyHeart(54 + i * 16, icy, i < mood, moodCol);
+  for (int i = 0; i < 4; i++) tinyHeart(&spr, 54 + i * 16, icy, i < mood, moodCol);
 
   y += FH + 4;
   spr.setCursor(6, textY(y)); spr.print(T(S_FED));
@@ -1012,9 +1034,11 @@ static void drawPetStats(const Palette& p) {
 
   y += FH + 6;
   int badgeH = FH + 4;
-  spr.fillRoundRect(6, y, 44, badgeH, 3, p.body);
+  char lvBuf[16]; snprintf(lvBuf, sizeof(lvBuf), T(S_LV), stats().level);
+  int badgeW = spr.textWidth(lvBuf) + 10;
+  spr.fillRoundRect(6, y, badgeW, badgeH, 3, p.body);
   spr.setTextColor(p.bg, p.body);
-  spr.setCursor(11, y + 2); spr.printf(T(S_LV), stats().level);
+  spr.setCursor(11, y + 2); spr.print(lvBuf);
 
   y += badgeH + 6;
   spr.setTextColor(p.textDim, p.bg);
@@ -1447,6 +1471,21 @@ static void drawLandscapeClockInPanel() {
   landSpr.setTextDatum(TL_DATUM);
 }
 
+static void renderBuddyPanel() {
+  characterSetPeek(false);
+  buddySetPeek(false);
+  if (buddyMode) {
+    buddyRenderTo(&landSpr, activeState);
+  } else {
+    lgfx::v1::LGFXBase* prevTgt = characterSetTarget(&landSpr);
+    characterSetArea(LAND_BUDDY_W, 135);
+    characterSetState(activeState);
+    characterTick();
+    characterSetArea(0, 0);
+    characterSetTarget(prevTgt);
+  }
+}
+
 static void drawLandscapeNormal(bool clocking) {
   const Palette& p = characterPalette();
 
@@ -1457,21 +1496,7 @@ static void drawLandscapeNormal(bool clocking) {
   }
 
   // Left panel: buddy/character (only clear + redraw when animation ticks)
-  static uint32_t lastPetTick = 0;
-  if (millis() - lastPetTick >= 200) {
-    lastPetTick = millis();
-    landSpr.fillRect(0, 0, LAND_BUDDY_W, 135, p.bg);
-    if (buddyMode) {
-      buddyRenderTo(&landSpr, activeState);
-    } else {
-      lgfx::v1::LGFXBase* prevTgt = characterSetTarget(&landSpr);
-      characterSetArea(LAND_BUDDY_W, 135);
-      characterSetState(activeState);
-      characterTick();
-      characterSetArea(0, 0);
-      characterSetTarget(prevTgt);
-    }
-  }
+  renderBuddyPanel();
 
   // Right panel: clear and render text info
   landSpr.fillRect(LAND_BUDDY_W, 0, 240 - LAND_BUDDY_W, 135, p.bg);
@@ -1491,11 +1516,280 @@ static void drawLandscapeNormal(bool clocking) {
     landSpr.setCursor(LAND_TEXT_X + 4, 2);
     landSpr.print(mb);
   }
+}
 
-  // Push offscreen buffer to display in one shot
-  M5.Display.setRotation(clockOrient);
-  landSpr.pushSprite(0, 0);
-  M5.Display.setRotation(0);
+static void drawLandscapeInfo() {
+  const Palette& p = characterPalette();
+
+  bool repaint = paintedOrient != clockOrient;
+  if (repaint) {
+    landSpr.fillSprite(p.bg);
+    paintedOrient = clockOrient;
+  }
+
+  // Left panel: buddy/character
+  renderBuddyPanel();
+
+  // Right panel: info text
+  landSpr.fillRect(LAND_BUDDY_W, 0, 240 - LAND_BUDDY_W, 135, p.bg);
+  landSpr.setTextSize(1);
+  const int txX = LAND_BUDDY_W + 4;
+  const int txW = 240 - LAND_BUDDY_W - 8;
+
+  int y = 2;
+  landSpr.setTextColor(p.text, p.bg);
+  landSpr.setCursor(txX, y); landSpr.print(T(S_INFO));
+  landSpr.setTextColor(p.textDim, p.bg);
+  char pg[8]; snprintf(pg, sizeof(pg), "%u/%u", infoPage + 1, INFO_PAGES);
+  landSpr.setCursor(240 - 4 - landSpr.textWidth(pg), y);
+  landSpr.print(pg);
+  y += FH;
+  landSpr.setTextColor(p.body, p.bg);
+  landSpr.setCursor(txX, y); landSpr.print(_infoSectionTitle());
+  y += FH + 2;
+
+  _fmtIdx = 0;
+  switch (infoPage) {
+    case 0: buildAboutPage(p); break;
+    case 1: buildButtonsPage(p); break;
+    case 2: buildClaudePage(p); break;
+    case 3: buildDevicePage(p); break;
+    case 4: buildBluetoothPage(p); break;
+    case 5: buildCreditsPage(p); break;
+  }
+  layoutItems(_infoItems, _infoItemCount);
+
+  uint8_t maxVis = (135 - y - 2) / FH;
+  if (_pageScroll >= _pageRowCount) _pageScroll = 0;
+  if (maxVis > _pageRowCount - _pageScroll) maxVis = _pageRowCount - _pageScroll;
+
+  for (uint8_t r = 0; r < maxVis; ) {
+    uint8_t ri = _pageScroll + r;
+    int rowY = y + r * FH;
+    if (_pageRowValue[ri]) {
+      uint8_t gEnd = r + 1;
+      while (gEnd < maxVis && _pageRowValue[_pageScroll + gEnd]) gEnd++;
+      int maxLW = 0;
+      for (uint8_t g = r; g < gEnd; g++) {
+        int w = landSpr.textWidth(_pageRows[_pageScroll + g]);
+        if (w > maxLW) maxLW = w;
+      }
+      int valX = txX + maxLW + 6;
+      for (uint8_t g = r; g < gEnd; g++) {
+        uint8_t gi = _pageScroll + g;
+        landSpr.setTextColor(_pageRowColor[gi], p.bg);
+        landSpr.setCursor(txX, y + g * FH);
+        landSpr.print(_pageRows[gi]);
+        if (valX + landSpr.textWidth(_pageRowValue[gi]) <= 240 - 4) {
+          landSpr.setCursor(valX, y + g * FH);
+          landSpr.print(_pageRowValue[gi]);
+        }
+      }
+      r = gEnd;
+    } else {
+      landSpr.setTextColor(_pageRowColor[ri], p.bg);
+      landSpr.setCursor(txX, rowY);
+      bool isLastVis = (r == maxVis - 1);
+      bool hasMore = (ri + 1 < _pageRowCount);
+      if (isLastVis && hasMore) {
+        char tmp[36]; memcpy(tmp, _pageRows[ri], 36);
+        int px = 0; uint8_t j = 0;
+        while (tmp[j] && px < txW - 12) {
+          uint8_t bl; utf8cp(&tmp[j], bl); if (!bl) break;
+          px += charPx(bl); j += bl;
+        }
+        tmp[j] = 0;
+        landSpr.print(tmp); landSpr.print("...");
+      } else {
+        landSpr.print(_pageRows[ri]);
+      }
+      r++;
+    }
+  }
+  if (_pageRowCount > maxVis + _pageScroll) {
+    landSpr.setTextColor(p.textDim, p.bg);
+    landSpr.setCursor(232, 135 - FH - 2);
+    landSpr.print("v");
+  }
+
+  // Approval prompt overlay at bottom
+  if (tama.promptId[0] && !responseSent) {
+    landSpr.fillRect(0, 135 - FH * 2 - 4, 240, FH * 2 + 4, p.bg);
+    landSpr.drawFastHLine(0, 135 - FH * 2 - 4, 240, p.textDim);
+    uint32_t waited = (millis() - promptArrivedMs) / 1000;
+    landSpr.setTextSize(1);
+    landSpr.setTextColor(waited >= 10 ? HOT : p.textDim, p.bg);
+    landSpr.setCursor(4, 135 - FH * 2 - 2);
+    landSpr.printf(T(S_APPROVE_FMT), (unsigned long)waited);
+    landSpr.setTextColor(GREEN, p.bg);
+    landSpr.setCursor(4, 135 - FH - 2);
+    landSpr.print(T(S_A_YES));
+    landSpr.setTextColor(HOT, p.bg);
+    landSpr.setCursor(240 - 36, 135 - FH - 2);
+    landSpr.print(T(S_B_NO));
+  }
+
+}
+
+static void drawLandscapePet() {
+  const Palette& p = characterPalette();
+
+  bool repaint = paintedOrient != clockOrient;
+  if (repaint) {
+    landSpr.fillSprite(p.bg);
+    paintedOrient = clockOrient;
+  }
+
+  // Left panel: buddy/character
+  renderBuddyPanel();
+
+  // Right panel
+  landSpr.fillRect(LAND_BUDDY_W, 0, 240 - LAND_BUDDY_W, 135, p.bg);
+  landSpr.setTextSize(1);
+  const int txX = LAND_BUDDY_W + 4;
+
+  int y = 2;
+  landSpr.setTextColor(p.text, p.bg);
+  landSpr.setCursor(txX, y);
+  if (ownerName()[0]) landSpr.printf("%s's %s", ownerName(), petName());
+  else landSpr.print(petName());
+  landSpr.setTextColor(p.textDim, p.bg);
+  char pg[8]; snprintf(pg, sizeof(pg), "%u/%u", petPage + 1, PET_PAGES);
+  landSpr.setCursor(240 - 4 - landSpr.textWidth(pg), y);
+  landSpr.print(pg);
+  y += FH + 4;
+
+  if (petPage == 0) {
+    auto textY = [](int ry) -> int { return ry; };
+    auto iconY = [](int ry) -> int { return ry + FH / 2; };
+
+    landSpr.setTextColor(p.textDim, p.bg);
+    landSpr.setCursor(txX, textY(y)); landSpr.print(T(S_MOOD));
+    uint8_t mood = statsMoodTier();
+    uint16_t moodCol = (mood >= 3) ? RED : (mood >= 2) ? HOT : p.textDim;
+    int icy = iconY(y);
+    for (int i = 0; i < 4; i++) tinyHeart(&landSpr, txX + 48 + i * 16, icy, i < mood, moodCol);
+
+    y += FH + 4;
+    landSpr.setCursor(txX, textY(y)); landSpr.print(T(S_FED));
+    uint8_t fed = statsFedProgress();
+    icy = iconY(y);
+    for (int i = 0; i < 10; i++) {
+      int px = txX + 32 + i * 9;
+      if (i < fed) landSpr.fillCircle(px, icy, 2, p.body);
+      else landSpr.drawCircle(px, icy, 2, p.textDim);
+    }
+
+    y += FH + 4;
+    landSpr.setCursor(txX, textY(y)); landSpr.print(T(S_ENERGY));
+    uint8_t en = statsEnergyTier();
+    uint16_t enCol = (en >= 4) ? 0x07FF : (en >= 2) ? 0xFFE0 : HOT;
+    icy = iconY(y);
+    for (int i = 0; i < 5; i++) {
+      int px = txX + 48 + i * 13;
+      if (i < en) landSpr.fillRect(px, icy - 3, 9, 6, enCol);
+      else landSpr.drawRect(px, icy - 3, 9, 6, p.textDim);
+    }
+
+    y += FH + 4;
+    int badgeH = FH + 4;
+    char lvBuf[16]; snprintf(lvBuf, sizeof(lvBuf), T(S_LV), stats().level);
+    int badgeW = landSpr.textWidth(lvBuf) + 10;
+    landSpr.fillRoundRect(txX, y, badgeW, badgeH, 3, p.body);
+    landSpr.setTextColor(p.bg, p.body);
+    landSpr.setCursor(txX + 5, y + 2); landSpr.print(lvBuf);
+
+    y += badgeH + 4;
+    landSpr.setTextColor(p.textDim, p.bg);
+    const char* sLabels[] = { T(S_APPROVED), T(S_DENIED), T(S_NAPPED), T(S_TOKENS), T(S_TODAY) };
+    int maxLW = 0;
+    for (int j = 0; j < 5; j++) { int w = landSpr.textWidth(sLabels[j]); if (w > maxLW) maxLW = w; }
+    int valX = txX + maxLW + 10;
+    if (valX + 40 > 240) valX = 240 - 40;
+
+    landSpr.setCursor(txX, y);          landSpr.print(T(S_APPROVED));
+    landSpr.setCursor(valX, y);         landSpr.printf("%u", stats().approvals);
+    landSpr.setCursor(txX, y + FH);     landSpr.print(T(S_DENIED));
+    landSpr.setCursor(valX, y + FH);    landSpr.printf("%u", stats().denials);
+    uint32_t nap = stats().napSeconds;
+    landSpr.setCursor(txX, y + FH * 2); landSpr.print(T(S_NAPPED));
+    landSpr.setCursor(valX, y + FH * 2); landSpr.printf("%luh%02lum", nap/3600, (nap/60)%60);
+    auto tokFmt = [&](const char* label, uint32_t v, int yPx) {
+      landSpr.setCursor(txX, yPx); landSpr.print(label);
+      landSpr.setCursor(valX, yPx);
+      if (v >= 1000000)   landSpr.printf("%lu.%luM", v/1000000, (v/100000)%10);
+      else if (v >= 1000) landSpr.printf("%lu.%luK", v/1000, (v/100)%10);
+      else                landSpr.printf("%lu", v);
+    };
+    tokFmt(T(S_TOKENS), stats().tokens, y + FH * 3);
+    tokFmt(T(S_TODAY), tama.tokensToday, y + FH * 4);
+  } else {
+    auto& it = _infoItems; uint8_t i = 0;
+    it[i++] = {T(S_HOW_MOOD), p.body};
+    it[i++] = {T(S_APPROVE_FAST), p.textDim};
+    it[i++] = {T(S_DENY_LOTS), p.textDim};
+    it[i++] = {T(S_HOW_FED), p.body};
+    it[i++] = {T(S_50K_TOKENS), p.textDim};
+    it[i++] = {T(S_LEVEL_UP), p.textDim};
+    it[i++] = {T(S_HOW_ENERGY), p.body};
+    it[i++] = {T(S_FACE_DOWN), p.textDim};
+    it[i++] = {T(S_REFILLS), p.textDim};
+    it[i++] = {T(S_IDLE_OFF), p.textDim};
+    it[i++] = {T(S_BTN_WAKE), p.textDim};
+    it[i++] = {T(S_A_SCREEN_B_PAGE), p.textDim};
+    it[i++] = {T(S_HOLD_A_MENU), p.textDim};
+    layoutItems(_infoItems, i);
+
+    uint8_t maxVis = (135 - y - 2) / FH;
+    if (_pageScroll >= _pageRowCount) _pageScroll = 0;
+    if (maxVis > _pageRowCount - _pageScroll) maxVis = _pageRowCount - _pageScroll;
+    for (uint8_t r = 0; r < maxVis; r++) {
+      uint8_t ri = _pageScroll + r;
+      landSpr.setTextColor(_pageRowColor[ri], p.bg);
+      landSpr.setCursor(txX, y + r * FH);
+      landSpr.print(_pageRows[ri]);
+    }
+    if (_pageRowCount > maxVis + _pageScroll) {
+      landSpr.setTextColor(p.textDim, p.bg);
+      landSpr.setCursor(232, 135 - FH - 2);
+      landSpr.print("v");
+    }
+  }
+
+  // Approval prompt overlay at bottom
+  if (tama.promptId[0] && !responseSent) {
+    landSpr.fillRect(0, 135 - FH * 2 - 4, 240, FH * 2 + 4, p.bg);
+    landSpr.drawFastHLine(0, 135 - FH * 2 - 4, 240, p.textDim);
+    uint32_t waited = (millis() - promptArrivedMs) / 1000;
+    landSpr.setTextSize(1);
+    landSpr.setTextColor(waited >= 10 ? HOT : p.textDim, p.bg);
+    landSpr.setCursor(4, 135 - FH * 2 - 2);
+    landSpr.printf(T(S_APPROVE_FMT), (unsigned long)waited);
+    landSpr.setTextColor(GREEN, p.bg);
+    landSpr.setCursor(4, 135 - FH - 2);
+    landSpr.print(T(S_A_YES));
+    landSpr.setTextColor(HOT, p.bg);
+    landSpr.setCursor(240 - 36, 135 - FH - 2);
+    landSpr.print(T(S_B_NO));
+  }
+
+}
+
+static void drawLandscapePasskey() {
+  const Palette& p = characterPalette();
+  landSpr.fillSprite(p.bg);
+  landSpr.setTextSize(1);
+  landSpr.setTextColor(p.textDim, p.bg);
+  landSpr.setTextDatum(MC_DATUM);
+  landSpr.drawString(T(S_BT_PAIRING), 120, 20);
+  landSpr.setTextSize(2);
+  landSpr.setTextColor(p.text, p.bg);
+  char b[8]; snprintf(b, sizeof(b), "%06lu", (unsigned long)blePasskey());
+  landSpr.drawString(b, 120, 55);
+  landSpr.setTextSize(1);
+  landSpr.setTextColor(p.textDim, p.bg);
+  landSpr.drawString(T(S_ENTER_DESKTOP), 120, 100);
+  landSpr.setTextDatum(TL_DATUM);
 }
 
 void setup() {
@@ -1749,25 +2043,27 @@ void loop() {
   if (_onUsb != stableUsb) { if (++usbDebounce >= 5) { stableUsb = _onUsb; usbDebounce = 0; } }
   else usbDebounce = 0;
 
-  bool canRotate = displayMode == DISP_NORMAL
+  bool canRotate = (displayMode == DISP_NORMAL || displayMode == DISP_INFO || displayMode == DISP_PET)
                && !menuOpen && !settingsOpen && !resetOpen;
   bool clocking = displayMode == DISP_NORMAL
                && !menuOpen && !settingsOpen && !resetOpen && !inPrompt
                && tama.sessionsRunning == 0 && tama.sessionsWaiting == 0
                && dataRtcValid() && stableUsb;
-  if (canRotate) clockUpdateOrient();
-  else if (clockOrient != 0) { paintedOrient = 0; clockOrient = 0; }
+  bool canOrient = (displayMode == DISP_NORMAL || displayMode == DISP_INFO || displayMode == DISP_PET);
+  if (canOrient) clockUpdateOrient();
   bool isLandscape = clockOrient == 1 || clockOrient == 3;
+  bool landscapeActive = isLandscape;
   bool landscapeNormal = canRotate && isLandscape;
   bool landscapeClock = clocking && isLandscape;
 
   static bool wasClocking = false;
   static bool wasLandscape = false;
   static uint8_t wasOrient = 0;
-  bool anyLandscape = landscapeNormal;
+  bool anyLandscape = landscapeActive;
   if (clocking != wasClocking || anyLandscape != wasLandscape || clockOrient != wasOrient) {
-    if (clocking && !anyLandscape) characterSetPeek(true);
-    else if (!anyLandscape) applyDisplayMode();
+    if (anyLandscape) characterSetPeek(false);
+    else if (clocking) characterSetPeek(true);
+    else applyDisplayMode();
     characterInvalidate();
     if (buddyMode) buddyInvalidate();
     wasClocking = clocking;
@@ -1794,8 +2090,10 @@ void loop() {
   if (pk && !lastPasskey) { wake(); beep(1800, 60); }
   lastPasskey = pk;
 
-  if (landscapeNormal) {
-    // landscape split-screen renders directly to M5.Display
+  if (landscapeNormal && displayMode == DISP_NORMAL) {
+    // landscape split-screen renders buddy + text
+  } else if (landscapeNormal && (displayMode == DISP_INFO || displayMode == DISP_PET)) {
+    // landscape info/pet renders in its own function (no buddy tick needed)
   } else if (napping || screenOff) {
     // skip sprite render
   } else if (buddyMode) {
@@ -1825,8 +2123,29 @@ void loop() {
       spr.print(T(S_NO_CHAR));
     }
   }
-  if (landscapeNormal) {
-    drawLandscapeNormal(clocking);
+  if (landscapeActive && !napping && !screenOff) {
+    // If modal just closed, force full repaint of background
+    static bool hadModal = false;
+    bool hasModal = resetOpen || settingsOpen || menuOpen;
+    if (hadModal && !hasModal) paintedOrient = 0;
+    hadModal = hasModal;
+    // Draw background page
+    if (displayMode == DISP_NORMAL) drawLandscapeNormal(clocking);
+    else if (displayMode == DISP_INFO) drawLandscapeInfo();
+    else if (displayMode == DISP_PET) drawLandscapePet();
+    else if (blePasskey()) drawLandscapePasskey();
+    // Draw modal overlay on top
+    if (resetOpen || settingsOpen || menuOpen) {
+      _mc = &landSpr;
+      if (resetOpen) drawReset();
+      else if (settingsOpen) drawSettings();
+      else if (menuOpen) drawMenu();
+      _mc = nullptr;
+    }
+    // Single push
+    M5.Display.setRotation(clockOrient);
+    landSpr.pushSprite(0, 0);
+    M5.Display.setRotation(0);
   } else if (!napping && !screenOff) {
     if (blePasskey()) drawPasskey();
     else if (clocking) drawClock();
