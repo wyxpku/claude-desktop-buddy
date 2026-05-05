@@ -60,7 +60,7 @@ inline void dataSetDemo(bool on) {
 inline bool dataDemo() { return _demoMode; }
 
 inline bool dataConnected() {
-  return _lastLiveMs != 0 && (millis() - _lastLiveMs) <= 30000;
+  return _lastLiveMs != 0 && (millis() - _lastLiveMs) <= 120000;
 }
 
 inline bool dataBtActive() {

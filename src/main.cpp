@@ -1114,6 +1114,50 @@ void drawPet() {
   else drawPetHowTo(p);
 }
 
+// Print a line, rendering `code` spans in highlight color without backticks
+static void printColored(const char* s, uint16_t baseColor, uint16_t codeColor, uint16_t bgColor) {
+  const char* p = s;
+  spr.setTextColor(baseColor, bgColor);
+  while (*p) {
+    if (*p == '\x01') {
+      p++;
+      const char* end = strchr(p, '\x02');
+      if (end) {
+        spr.setTextColor(codeColor, bgColor);
+        while (p < end) { spr.print(*p); p++; }
+        p++; // skip \x02
+        spr.setTextColor(baseColor, bgColor);
+      }
+    } else if ((uint8_t)*p >= 0x20) {
+      spr.print(*p); p++;
+    } else {
+      p++; // skip other control chars
+    }
+  }
+}
+
+// Replace `code` with \x01code\x02 markers (same pixel width as ASCII,
+// so wrapInto computes correct breaks; printColored detects them).
+static void markCodeSpans(const char* src, char* dst, size_t dstLen) {
+  size_t j = 0;
+  while (*src && j < dstLen - 2) {
+    if (*src == '`') {
+      src++;
+      const char* end = strchr(src, '`');
+      if (end) {
+        dst[j++] = '\x01';
+        while (src < end && j < dstLen - 2) dst[j++] = *src++;
+        dst[j++] = '\x02';
+        src++; // skip closing backtick
+      }
+      // unmatched backtick: skip it
+    } else {
+      dst[j++] = *src++;
+    }
+  }
+  dst[j] = 0;
+}
+
 void drawHUD() {
   if (tama.promptId[0]) { drawApproval(); return; }
   const Palette& p = characterPalette();
@@ -1125,17 +1169,20 @@ void drawHUD() {
   if (tama.lineGen != lastLineGen) { msgScroll = 0; lastLineGen = tama.lineGen; wake(); }
 
   if (tama.nLines == 0) {
-    spr.setTextColor(p.text, p.bg);
+    char mb[96];
+    markCodeSpans(tama.msg, mb, sizeof(mb));
     spr.setCursor(4, H - LH - 2);
-    spr.print(tama.msg);
+    printColored(mb, p.text, p.body, p.bg);
     return;
   }
 
   static char disp[32][36];
   static uint8_t srcOf[32];
+  char markBuf[96];
   uint8_t nDisp = 0;
   for (uint8_t i = 0; i < tama.nLines && nDisp < 32; i++) {
-    uint8_t got = wrapInto(tama.lines[i], &disp[nDisp], 32 - nDisp, WIDTH);
+    markCodeSpans(tama.lines[i], markBuf, sizeof(markBuf));
+    uint8_t got = wrapInto(markBuf, &disp[nDisp], 32 - nDisp, WIDTH);
     for (uint8_t j = 0; j < got; j++) srcOf[nDisp + j] = i;
     nDisp += got;
   }
@@ -1149,9 +1196,9 @@ void drawHUD() {
   for (int i = 0; start + i < end; i++) {
     uint8_t row = start + i;
     bool fresh = (srcOf[row] == newest) && (msgScroll == 0);
-    spr.setTextColor(fresh ? p.text : p.textDim, p.bg);
+    uint16_t base = fresh ? p.text : p.textDim;
     spr.setCursor(4, H - AREA + 2 + i * LH);
-    spr.print(disp[row]);
+    printColored(disp[row], base, p.body, p.bg);
   }
   if (msgScroll > 0) {
     spr.setTextColor(p.body, p.bg);

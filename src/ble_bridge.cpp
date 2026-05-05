@@ -88,8 +88,6 @@ class SecCallbacks : public BLESecurityCallbacks {
 
 void bleInit(const char* deviceName) {
   BLEDevice::init(deviceName);
-  // Clear any stale MITM bonds so SC Bond re-pairs cleanly.
-  bleClearBonds();
   // Request the biggest MTU we can get. macOS negotiates to 185 typically.
   BLEDevice::setMTU(517);
 
