@@ -50,7 +50,7 @@ Hold A → settings: brightness, sound, bluetooth (on/off + clear bonds), Wi-Fi,
 | Feature | Upstream | This fork |
 |---|---|---|
 | **BLE transport** | Claude desktop app | Standalone Python bridge ([cc-buddy-bridge](https://github.com/wyxpku/cc-buddy-bridge)) |
-| **BLE pairing** | Just Works | LE Secure Connections + passkey display |
+| **BLE pairing** | LE Secure Connections + passkey | Same, with one-time bond migration |
 | **Device support** | M5StickS3, M5StickC Plus | M5StickS3 only |
 | **Language** | English | English + Chinese (switchable in settings) |
 | **HUD markdown** | Plain text | Bold, code spans, quotes, bullet lists |
