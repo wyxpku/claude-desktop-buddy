@@ -150,6 +150,18 @@ void bleClearBonds() {
   Serial.printf("[ble] cleared %d bond(s)\n", n);
 }
 
+int bleGetBonds(uint8_t macs[][6], int maxCount) {
+  int n = esp_ble_get_bond_device_num();
+  if (n <= 0) return 0;
+  esp_ble_bond_dev_t* list = (esp_ble_bond_dev_t*)malloc(n * sizeof(esp_ble_bond_dev_t));
+  if (!list) return 0;
+  esp_ble_get_bond_device_list(&n, list);
+  int count = n > maxCount ? maxCount : n;
+  for (int i = 0; i < count; i++) memcpy(macs[i], list[i].bd_addr, 6);
+  free(list);
+  return count;
+}
+
 size_t bleAvailable() {
   return (rxHead + RX_CAP - rxTail) % RX_CAP;
 }

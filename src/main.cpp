@@ -159,6 +159,12 @@ const uint8_t RESET_N = 3;
 static uint32_t resetConfirmUntil = 0;
 static uint8_t  resetConfirmIdx = 0xFF;
 
+uint8_t settingsSubPage = 0;   // 0=main, 1=bluetooth
+uint8_t btSel  = 0;
+static const uint8_t BT_MENU_N = 3;  // toggle, clear bonds, back
+static uint32_t btConfirmUntil = 0;
+static bool     btClearArmed = false;
+
 static void applySetting(uint8_t idx) {
   Settings& s = settings();
   switch (idx) {
@@ -168,8 +174,8 @@ static void applySetting(uint8_t idx) {
       return;
     case 1: s.sound = !s.sound; break;
     case 2:
-      s.bt = !s.bt;
-      break;
+      settingsSubPage = 1; btSel = 0; btClearArmed = false;
+      return;
     case 3: s.wifi = !s.wifi; break;
     case 4: s.led = !s.led; break;
     case 5: s.hud = !s.hud; break;
@@ -180,7 +186,7 @@ static void applySetting(uint8_t idx) {
     case 7: s.clockRot = (s.clockRot + 1) % 3; break;
     case 8: nextPet(); return;
     case 9: resetOpen = true; resetSel = 0; resetConfirmIdx = 0xFF; return;
-    case 10: settingsOpen = false; characterInvalidate(); return;
+    case 10: settingsOpen = false; settingsSubPage = 0; characterInvalidate(); return;
   }
   settingsSave();
 }
@@ -234,6 +240,26 @@ static void applyReset(uint8_t idx) {
   ESP.restart();
 }
 
+static void applyBtSetting(uint8_t idx) {
+  if (idx == 0) {
+    settings().bt = !settings().bt;
+    settingsSave();
+  } else if (idx == 1) {
+    uint32_t now = millis();
+    if (btClearArmed && (int32_t)(now - btConfirmUntil) < 0) {
+      bleClearBonds();
+      btClearArmed = false;
+      beep(2400, 60);
+    } else {
+      btClearArmed = true;
+      btConfirmUntil = now + 3000;
+      beep(1400, 60);
+    }
+  } else {
+    settingsSubPage = 0;
+  }
+}
+
 const int MENU_HINT_H = 14;
 static void drawMenuHints(const Palette& p, int mx, int mw, int hy,
                           const char* downLbl = "A", const char* rightLbl = "B") {
@@ -256,6 +282,79 @@ static void drawSettings() {
   spr.fillRoundRect(mx, my, mw, mh, 4, PANEL);
   spr.drawRoundRect(mx, my, mw, mh, 4, p.textDim);
   spr.setTextSize(1);
+
+  if (settingsSubPage == 1) {
+    // BT sub-page — same panel, different content
+    uint8_t bondMacs[8][6];
+    int bondCount = settings().bt ? bleGetBonds(bondMacs, 8) : 0;
+    int y = my + 8;
+
+    // Section: title (selectable — btSel 0 toggles BT)
+    bool titleSel = (btSel == 0);
+    spr.setTextColor(titleSel ? p.text : p.textDim, PANEL);
+    spr.setCursor(mx + 6, y);
+    spr.print(titleSel ? "> " : "  ");
+    spr.print(T(S_SET_BLUETOOTH));
+    // Status indicator (connected / on / off)
+    const char* st = bleConnected() ? T(S_LINKED) : (settings().bt ? T(S_ON) : T(S_OFF));
+    uint16_t stCol = bleConnected() ? GREEN : (settings().bt ? GREEN : p.textDim);
+    spr.setTextColor(stCol, PANEL);
+    spr.setCursor(mx + mw - spr.textWidth(st) - 6, y);
+    spr.print(st);
+    y += FH;
+    // Separator line
+    spr.drawFastHLine(mx + 6, y, mw - 12, p.textDim);
+    y += 4;
+
+    // Section: paired devices
+    spr.setTextColor(p.textDim, PANEL);
+    spr.setCursor(mx + 6, y);
+    spr.print(T(S_BT_DEVICES));
+    // Device count on the right
+    char cntBuf[8];
+    snprintf(cntBuf, sizeof(cntBuf), "%d", bondCount);
+    spr.setCursor(mx + mw - spr.textWidth(cntBuf) - 6, y);
+    spr.print(cntBuf);
+    y += FH;
+    if (bondCount == 0) {
+      spr.setTextColor(p.textDim, PANEL);
+      spr.setCursor(mx + 10, y);
+      spr.print(T(S_BT_NO_DEVICE));
+      y += FH;
+    } else {
+      for (int d = 0; d < bondCount && d < 4; d++) {
+        spr.setTextColor(p.textDim, PANEL);
+        spr.setCursor(mx + 10, y);
+        spr.printf("%02X:%02X:%02X:%02X:%02X:%02X",
+          bondMacs[d][0], bondMacs[d][1], bondMacs[d][2],
+          bondMacs[d][3], bondMacs[d][4], bondMacs[d][5]);
+        y += FH;
+      }
+    }
+    y += 2;
+    // Separator
+    spr.drawFastHLine(mx + 6, y, mw - 12, p.textDim);
+    y += 4;
+
+    // Selectable actions: btSel 1=clear, 2=back
+    for (int i = 1; i <= 2; i++) {
+      bool sel = (btSel == i);
+      spr.setTextColor(sel ? p.text : p.textDim, PANEL);
+      spr.setCursor(mx + 6, y);
+      spr.print(sel ? "> " : "  ");
+      if (i == 1) {
+        bool armed = btClearArmed && (int32_t)(millis() - btConfirmUntil) < 0;
+        if (armed) spr.setTextColor(HOT, PANEL);
+        spr.print(armed ? T(S_REALLY) : T(S_BT_CLEAR));
+      } else {
+        spr.print(T(S_BT_BACK));
+      }
+      y += FH;
+    }
+    drawMenuHints(p, mx, mw, my + mh - 12, T(S_NEXT), T(S_CHANGE));
+    return;
+  }
+
   Settings& s = settings();
   bool vals[] = { s.sound, s.bt, s.wifi, s.led, s.hud };
   for (int i = 0; i < SETTINGS_N; i++) {
@@ -265,7 +364,6 @@ static void drawSettings() {
     spr.setCursor(mx + 6, iy);
     spr.print(sel ? "> " : "  ");
     spr.print(T(settingsIds[i]));
-    // Compute value string, then right-align
     char vb[16] = ""; uint16_t vc = p.textDim;
     if (i == 0) {
       snprintf(vb, sizeof(vb), "%u/4", brightLevel);
@@ -313,7 +411,7 @@ static void drawReset() {
 
 void menuConfirm() {
   switch (menuSel) {
-    case 0: settingsOpen = true; menuOpen = false; settingsSel = 0; break;
+    case 0: settingsOpen = true; menuOpen = false; settingsSel = 0; settingsSubPage = 0; break;
     case 1: M5.Power.powerOff(); break;
     case 2:
     case 3:
@@ -1159,7 +1257,7 @@ void loop() {
       wake();
       beep(1200, 80);
       displayMode = DISP_NORMAL;
-      menuOpen = settingsOpen = resetOpen = false;
+      menuOpen = settingsOpen = resetOpen = false; settingsSubPage = 0;
       applyDisplayMode();
       characterInvalidate();
       if (buddyMode) buddyInvalidate();
@@ -1193,8 +1291,9 @@ void loop() {
   if (M5.BtnA.pressedFor(600) && !btnALong && !swallowBtnA) {
     btnALong = true;
     beep(800, 60);
-    if (resetOpen) { resetOpen = false; }
-    else if (settingsOpen) { settingsOpen = false; characterInvalidate(); }
+    if (settingsOpen && settingsSubPage == 1) { settingsSubPage = 0; }
+    else if (resetOpen) { resetOpen = false; }
+    else if (settingsOpen) { settingsOpen = false; settingsSubPage = 0; characterInvalidate(); }
     else {
       menuOpen = !menuOpen;
       menuSel = 0;
@@ -1213,6 +1312,10 @@ void loop() {
         statsOnApproval(tookS);
         beep(2400, 60);
         if (tookS < 5) triggerOneShot(P_HEART, 2000);
+      } else if (settingsOpen && settingsSubPage == 1) {
+        beep(1800, 30);
+        btSel = (btSel + 1) % BT_MENU_N;
+        btClearArmed = false;
       } else if (resetOpen) {
         beep(1800, 30);
         resetSel = (resetSel + 1) % RESET_N;
@@ -1244,6 +1347,9 @@ void loop() {
       responseSent = true;
       statsOnDenial();
       beep(600, 60);
+    } else if (settingsOpen && settingsSubPage == 1) {
+      beep(2400, 30);
+      applyBtSetting(btSel);
     } else if (resetOpen) {
       beep(2400, 30);
       applyReset(resetSel);

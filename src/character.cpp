@@ -292,7 +292,7 @@ void characterSetState(uint8_t s) {
     return;
   }
 
-  uint8_t idx = stateStart[s] + stateRot[s];
+  uint8_t idx = stateStart[s] + (stateCount[s] > 1 ? esp_random() % stateCount[s] : 0);
   char full[80];
   snprintf(full, sizeof(full), "%s/%s", basePath, gifPaths[idx]);
   if (gif.open(full, gifOpenCb, gifCloseCb, gifReadCb, gifSeekCb, gifDrawCb)) {
@@ -358,7 +358,7 @@ void characterTick() {
       return;
     }
     gif.close(); gifOpen = false;
-    stateRot[curState] = (stateRot[curState] + 1) % stateCount[curState];
+    stateRot[curState] = esp_random() % stateCount[curState];
     animPauseUntil = now + ANIM_PAUSE_MS;
     return;
   }

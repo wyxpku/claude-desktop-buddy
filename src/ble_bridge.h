@@ -27,6 +27,8 @@ uint32_t blePasskey();
 // Erase all stored bonds (LTKs) from NVS. Called from the "unpair" cmd
 // and from factory reset.
 void bleClearBonds();
+// Get bonded device MACs. Returns count (max 8). Caller provides buf.
+int bleGetBonds(uint8_t macs[][6], int maxCount);
 size_t bleAvailable();
 int bleRead();
 size_t bleWrite(const uint8_t* data, size_t len);
