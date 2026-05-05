@@ -597,7 +597,8 @@ PersonaState derive(const TamaState& s) {
   if (!s.connected)            return P_IDLE;
   if (s.sessionsWaiting > 0)   return P_ATTENTION;
   if (s.recentlyCompleted)     return P_CELEBRATE;
-  if (s.sessionsRunning >= 3)  return P_BUSY;
+  if (s.sessionsRunning >= 1 && (millis() - s.lastUpdated) < 120000)
+                                return P_BUSY;
   return P_IDLE;
 }
 
