@@ -49,13 +49,11 @@ Hold A → settings: brightness, sound, bluetooth (on/off + clear bonds), Wi-Fi,
 
 | Feature | Upstream | This fork |
 |---|---|---|
+| **Device** | M5StickC Plus (ESP32) | M5StickS3 (ESP32-S3) |
 | **BLE transport** | Claude desktop app | Standalone Python bridge ([cc-buddy-bridge](https://github.com/wyxpku/cc-buddy-bridge)) |
-| **BLE pairing** | LE Secure Connections + passkey | Same, with one-time bond migration |
-| **Device support** | M5StickS3, M5StickC Plus | M5StickS3 only |
 | **Language** | English | English + Chinese (switchable in settings) |
 | **HUD markdown** | Plain text | Bold, code spans, quotes, bullet lists |
 | **Approval alert** | Single beep | Repeating chime until resolved |
-| **Default pet** | ASCII capybara | Clawd (GIF character, position 1/19) |
-| **Pet count** | 18 ASCII | 19 (18 ASCII + clawd GIF) |
+| **Default pet** | ASCII (first in scan order) | Clawd GIF (position 1/19) |
 | **Clock page** | Reads RTC directly | Validates BM8563 readings, rejects garbage |
 | **BT settings** | On/off toggle | Sub-menu with bond management |
