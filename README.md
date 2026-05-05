@@ -47,13 +47,11 @@ Hold A → settings: brightness, sound, bluetooth (on/off + clear bonds), Wi-Fi,
 
 ## Differences from [upstream](https://github.com/anthropics/claude-desktop-buddy)
 
-| Feature | Upstream | This fork |
-|---|---|---|
-| **Device** | M5StickC Plus (ESP32) | M5StickS3 (ESP32-S3) |
-| **BLE transport** | Claude desktop app | Standalone Python bridge ([cc-buddy-bridge](https://github.com/wyxpku/cc-buddy-bridge)) |
-| **Language** | English | English + Chinese (switchable in settings) |
-| **HUD markdown** | Plain text | Bold, code spans, quotes, bullet lists |
-| **Approval alert** | Single beep | Repeating chime until resolved |
-| **Default pet** | ASCII (first in scan order) | Clawd GIF (position 1/19) |
-| **Clock page** | Reads RTC directly | Validates BM8563 readings, rejects garbage |
-| **BT settings** | On/off toggle | Sub-menu with bond management |
+- Target M5StickS3 (ESP32-S3) instead of M5StickC Plus (ESP32)
+- Use standalone Python bridge ([cc-buddy-bridge](https://github.com/wyxpku/cc-buddy-bridge)) instead of Claude desktop app
+- Chinese language support (EN/ZH switchable in settings)
+- HUD renders markdown: bold, code spans, quotes, bullet lists
+- Repeating alert chime for pending approval prompts
+- Clawd GIF as default pet (19 species total)
+- BM8563 RTC validation to prevent garbage display
+- Bluetooth sub-menu with bond management
