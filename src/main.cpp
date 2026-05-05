@@ -8,6 +8,7 @@
 using namespace lgfx::fonts;
 
 M5Canvas spr(&M5.Display);
+M5Canvas landSpr(&M5.Display);
 
 // Advertise as "Claude-XXXX" (last two BT MAC bytes) so multiple sticks
 // in one room are distinguishable in the desktop picker. Name persists in
@@ -29,6 +30,11 @@ const int CY_BASE = 120;
 const int FH = 12;         // font height (efontCN_12)
 const int FW = 12;         // approximate font width
 const int CHARS_PER_LINE = 11;  // W / FW
+const int LAND_BUDDY_W    = 100;
+const int LAND_SEP_X      = 102;
+const int LAND_TEXT_X      = 106;
+const int LAND_TEXT_CHARS  = 10;
+const int LAND_TEXT_LINES  = 11;
 
 // Colors used across multiple UI surfaces
 const uint16_t HOT   = 0xFA20;   // red-orange: warnings, impatience, deny
@@ -477,13 +483,10 @@ void drawMenu() {
   drawMenuHints(p, mx, mw, my + mh - 12);
 }
 
-// Clock orientation: gravity along the in-plane X axis means the stick is
-// on its side. Signed counter for hysteresis on both transitions.
-//   0 = portrait (sprite path, pet sleeps underneath)
-//   1 = landscape, BtnA-side down (rotation 1)
-//   3 = landscape, USB-side down (rotation 3)
+// Clock orientation from IMU gravity vector:
+//   0 = portrait upright     1 = landscape left
+//   2 = portrait inverted    3 = landscape right
 static uint8_t clockOrient   = 0;
-static int8_t  orientFrames  = 0;
 static uint8_t paintedOrient = 0;
 // Cache the time once per second.
 static m5::rtc_time_t _clkTm;
@@ -509,31 +512,39 @@ static void clockRefreshRtc() {
   _clkDt = dt;
 }
 
-static void clockUpdateOrient() {
+static uint8_t gravityOrient() {
   float ax, ay, az;
   M5.Imu.getAccel(&ax, &ay, &az);
+  float absAx = fabsf(ax), absAy = fabsf(ay), absAz = fabsf(az);
+  // X gravity dominant → portrait (upright / inverted)
+  if (absAx >= absAy && absAx >= absAz && absAx > 0.5f)
+    return (ax > 0) ? 2 : 0;
+  // Y gravity dominant → landscape (USB right / USB left)
+  if (absAy > absAx && absAy > absAz && absAy > 0.5f)
+    return (ay > 0) ? 1 : 3;
+  // Flat on desk — keep current
+  return clockOrient;
+}
+
+static void clockUpdateOrient() {
   uint8_t lock = settings().clockRot;
   if (lock == 1) { clockOrient = 0; return; }
   if (lock == 2) {
-    if (clockOrient == 0) clockOrient = (ax >= 0) ? 1 : 3;
-    if      (ax >  0.5f && clockOrient != 1) clockOrient = 1;
-    else if (ax < -0.5f && clockOrient != 3) clockOrient = 3;
+    uint8_t want = gravityOrient();
+    if (want != clockOrient) clockOrient = want;
     return;
   }
-  bool side = (clockOrient == 0)
-    ? fabsf(ax) > 0.7f && fabsf(ay) < 0.5f && fabsf(az) < 0.5f
-    : fabsf(ax) > 0.4f;
-  if (side) { if (orientFrames < 20) orientFrames++; }
-  else      { if (orientFrames > -10) orientFrames--; }
-  if (clockOrient == 0 && orientFrames >= 15) {
-    clockOrient = (ax > 0) ? 1 : 3;
-  } else if (clockOrient != 0 && orientFrames <= -8) {
-    clockOrient = 0;
-  } else if (clockOrient != 0 && side) {
-    static int8_t swapFrames = 0;
-    uint8_t want = (ax > 0) ? 1 : 3;
-    if (want != clockOrient) { if (++swapFrames >= 8) { clockOrient = want; swapFrames = 0; } }
-    else swapFrames = 0;
+  uint8_t want = gravityOrient();
+  static uint8_t wantStable = 0;
+  static uint8_t wantCount  = 0;
+  if (want == wantStable) {
+    if (wantCount < 20) wantCount++;
+  } else {
+    wantStable = want;
+    wantCount  = 1;
+  }
+  if (wantCount >= 12) {
+    if (clockOrient != wantStable) clockOrient = wantStable;
   }
 }
 
@@ -551,46 +562,13 @@ static void drawClock() {
   uint8_t mi = (_clkDt.month >= 1 && _clkDt.month <= 12) ? _clkDt.month - 1 : 0;
   char dl[16]; snprintf(dl, sizeof(dl), "%s %02d", T(monIds[mi]), _clkDt.date);
 
-  if (clockOrient == 0) {
-    paintedOrient = 0;
-    spr.fillRect(0, 90, W, H - 90, p.bg);
-    spr.setTextDatum(MC_DATUM);
-    spr.setTextSize(3); spr.setTextColor(p.text, p.bg);    spr.drawString(hm, CX, 140);
-    spr.setTextSize(1); spr.setTextColor(p.textDim, p.bg); spr.drawString(ss, CX, 170);
-                                                         spr.drawString(dl, CX, 190);
-    spr.setTextDatum(TL_DATUM);
-    return;
-  }
-
-  M5.Display.setRotation(clockOrient);
-  M5.Display.setFont(&efontCN_12);
-  static uint8_t lastSec = 0xFF;
-  bool repaint = paintedOrient != clockOrient;
-  if (repaint) { M5.Display.fillScreen(p.bg); paintedOrient = clockOrient; lastSec = 0xFF; }
-
-  if (repaint || _clkTm.seconds != lastSec) {
-    lastSec = _clkTm.seconds;
-    char wdl[16]; snprintf(wdl, sizeof(wdl), "%s %s %02d", T(dowIds[clockDow()]), T(monIds[mi]), _clkDt.date);
-    char ssl[3]; snprintf(ssl, sizeof(ssl), "%02d", _clkTm.seconds);
-    M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.setTextSize(2); M5.Display.setTextColor(p.text, p.bg);    M5.Display.drawString(hm, 170, 42);
-    M5.Display.setTextSize(1); M5.Display.setTextColor(p.textDim, p.bg); M5.Display.drawString(ssl, 170, 72);
-                                                                          M5.Display.drawString(wdl, 170, 102);
-    M5.Display.setTextDatum(TL_DATUM);
-  }
-
-  static uint32_t lastPetTick = 0;
-  if (millis() - lastPetTick >= 200) {
-    lastPetTick = millis();
-    if (buddyMode) {
-      M5.Display.fillRect(0, 0, 115, 90, p.bg);
-      buddyRenderTo(&M5.Display, activeState);
-    } else {
-      characterSetState(activeState);
-      characterRenderTo(&M5.Display, 57, 45);
-    }
-  }
-  M5.Display.setRotation(0);
+  paintedOrient = 0;
+  spr.fillRect(0, 90, W, H - 90, p.bg);
+  spr.setTextDatum(MC_DATUM);
+  spr.setTextSize(3); spr.setTextColor(p.text, p.bg);    spr.drawString(hm, CX, 140);
+  spr.setTextSize(1); spr.setTextColor(p.textDim, p.bg); spr.drawString(ss, CX, 170);
+                                                       spr.drawString(dl, CX, 190);
+  spr.setTextDatum(TL_DATUM);
 }
 
 PersonaState derive(const TamaState& s) {
@@ -1168,39 +1146,44 @@ void drawPet() {
 //   \x03...\x04  bold       → brightColor (usually p.text)
 //   \x05         quote line → baseColor with 2px indent
 //   \x06         code block → codeColor with 2px indent
-static void printColored(const char* s, uint16_t baseColor, uint16_t codeColor, uint16_t brightColor, uint16_t bgColor) {
+static void printColoredTo(lgfx::v1::LGFXBase* tgt, const char* s,
+    uint16_t baseColor, uint16_t codeColor, uint16_t brightColor, uint16_t bgColor) {
   const char* p = s;
   int indent = 0;
   if (*p == '\x05') { indent = 2; p++; }
-  else if (*p == '\x06') { indent = 2; spr.setTextColor(codeColor, bgColor); }
-  else { spr.setTextColor(baseColor, bgColor); }
-  int curX = spr.getCursorX() + indent;
-  spr.setCursor(curX, spr.getCursorY());
+  else if (*p == '\x06') { indent = 2; tgt->setTextColor(codeColor, bgColor); }
+  else { tgt->setTextColor(baseColor, bgColor); }
+  int curX = tgt->getCursorX() + indent;
+  tgt->setCursor(curX, tgt->getCursorY());
   while (*p) {
     if (*p == '\x01') {
       p++;
       const char* end = strchr(p, '\x02');
       if (end) {
-        spr.setTextColor(codeColor, bgColor);
-        while (p < end) { spr.print(*p); p++; }
-        p++; // skip \x02
-        spr.setTextColor(baseColor, bgColor);
+        tgt->setTextColor(codeColor, bgColor);
+        while (p < end) { tgt->print(*p); p++; }
+        p++;
+        tgt->setTextColor(baseColor, bgColor);
       }
     } else if (*p == '\x03') {
       p++;
       const char* end = strchr(p, '\x04');
       if (end) {
-        spr.setTextColor(brightColor, bgColor);
-        while (p < end) { spr.print(*p); p++; }
-        p++; // skip \x04
-        spr.setTextColor(baseColor, bgColor);
+        tgt->setTextColor(brightColor, bgColor);
+        while (p < end) { tgt->print(*p); p++; }
+        p++;
+        tgt->setTextColor(baseColor, bgColor);
       }
     } else if ((uint8_t)*p >= 0x20) {
-      spr.print(*p); p++;
+      tgt->print(*p); p++;
     } else {
-      p++; // skip other control chars
+      p++;
     }
   }
+}
+
+static void printColored(const char* s, uint16_t baseColor, uint16_t codeColor, uint16_t brightColor, uint16_t bgColor) {
+  printColoredTo(&spr, s, baseColor, codeColor, brightColor, bgColor);
 }
 
 // Replace markdown with zero-width control markers for printColored:
@@ -1339,6 +1322,182 @@ void drawHUD() {
   }
 }
 
+static void drawLandscapeHUD() {
+  const Palette& p = characterPalette();
+  const int SHOW = LAND_TEXT_LINES, LH = FH, WIDTH = LAND_TEXT_CHARS;
+  const int txX = LAND_TEXT_X + 4;
+
+  if (tama.lineGen != lastLineGen) { msgScroll = 0; lastLineGen = tama.lineGen; wake(); }
+
+  if (tama.nLines == 0) {
+    char mb[96];
+    markMd(tama.msg, mb, sizeof(mb));
+    landSpr.setTextSize(1);
+    landSpr.setCursor(txX, 2);
+    printColoredTo(&landSpr, mb, p.text, p.body, p.body, p.bg);
+    return;
+  }
+
+  static char disp[32][36];
+  static uint8_t srcOf[32];
+  char markBuf[96];
+  uint8_t nDisp = 0;
+  bool truncated = false;
+  for (uint8_t i = 0; i < tama.nLines && nDisp < 32; i++) {
+    markMd(tama.lines[i], markBuf, sizeof(markBuf));
+    uint8_t room = 32 - nDisp;
+    uint8_t got = wrapInto(markBuf, &disp[nDisp], room, WIDTH);
+    for (uint8_t j = 0; j < got; j++) srcOf[nDisp + j] = i;
+    nDisp += got;
+    if (nDisp >= 32 && i + 1 < tama.nLines) truncated = true;
+  }
+  if (truncated) {
+    char* r = disp[0];
+    size_t len = strlen(r);
+    if (len + 3 < 36) memcpy(r + len, "...", 4);
+    else memcpy(r + 32, "...", 4);
+  }
+
+  uint8_t maxBack = (nDisp > SHOW) ? (nDisp - SHOW) : 0;
+  if (msgScroll > maxBack) msgScroll = maxBack;
+
+  int end = (int)nDisp - msgScroll;
+  int start = end - SHOW; if (start < 0) start = 0;
+  uint8_t newest = tama.nLines - 1;
+  landSpr.setTextSize(1);
+  for (int i = 0; start + i < end; i++) {
+    uint8_t row = start + i;
+    bool fresh = (srcOf[row] == newest) && (msgScroll == 0);
+    uint16_t base = fresh ? p.text : p.textDim;
+    landSpr.setCursor(txX, 2 + i * LH);
+    printColoredTo(&landSpr, disp[row], base, p.body, p.body, p.bg);
+  }
+  if (msgScroll > 0) {
+    landSpr.setTextColor(p.body, p.bg);
+    landSpr.setCursor(240 - 24, 135 - FH - 2);
+    landSpr.printf("-%u", msgScroll);
+  }
+}
+
+static void drawLandscapeApproval() {
+  const Palette& p = characterPalette();
+  const int txX = LAND_TEXT_X + 4;
+  landSpr.setTextSize(1);
+
+  landSpr.setTextColor(p.textDim, p.bg);
+  landSpr.setCursor(txX, 2);
+  uint32_t waited = (millis() - promptArrivedMs) / 1000;
+  if (waited >= 10) landSpr.setTextColor(HOT, p.bg);
+  landSpr.printf(T(S_APPROVE_FMT), (unsigned long)waited);
+
+  landSpr.setTextColor(p.text, p.bg);
+  landSpr.setCursor(txX, 2 + FH);
+  landSpr.print(tama.promptTool);
+
+  landSpr.setTextColor(p.textDim, p.bg);
+  int y = 2 + FH * 2;
+  const char* h = tama.promptHint;
+  const int maxPx = 240 - LAND_TEXT_X - 8;
+  const char* start = h;
+  for (int line = 0; line < 6 && *start; line++) {
+    int px = 0;
+    const char* end = start;
+    while (*end) {
+      uint8_t bl; utf8cp(end, bl); if (!bl) break;
+      int cpx = charPx(bl);
+      if (px + cpx > maxPx) break;
+      px += cpx;
+      end += bl;
+    }
+    int take = end - start;
+    if (take == 0 && *end) { uint8_t bl; utf8cp(end, bl); take = bl ? bl : 1; }
+    landSpr.setCursor(txX, y + line * FH);
+    landSpr.printf("%.*s", take, start);
+    start += take;
+  }
+
+  if (responseSent) {
+    landSpr.setTextColor(p.textDim, p.bg);
+    landSpr.setCursor(txX, 135 - FH - 2);
+    landSpr.print(T(S_SENT));
+  } else {
+    landSpr.setTextColor(GREEN, p.bg);
+    landSpr.setCursor(txX, 135 - FH - 2);
+    landSpr.print(T(S_A_YES));
+    landSpr.setTextColor(HOT, p.bg);
+    landSpr.setCursor(240 - 36, 135 - FH - 2);
+    landSpr.print(T(S_B_NO));
+  }
+}
+
+static void drawLandscapeClockInPanel() {
+  const Palette& p = characterPalette();
+  const int cx = LAND_TEXT_X + (240 - LAND_TEXT_X) / 2;
+  char hm[6]; snprintf(hm, sizeof(hm), "%02d:%02d", _clkTm.hours, _clkTm.minutes);
+  char ss[4]; snprintf(ss, sizeof(ss), ":%02d", _clkTm.seconds);
+  uint8_t mi = (_clkDt.month >= 1 && _clkDt.month <= 12) ? _clkDt.month - 1 : 0;
+  char dl[16]; snprintf(dl, sizeof(dl), "%s %02d", T(monIds[mi]), _clkDt.date);
+
+  landSpr.setTextDatum(MC_DATUM);
+  landSpr.setTextSize(2); landSpr.setTextColor(p.text, p.bg);
+  landSpr.drawString(hm, cx, 40);
+  landSpr.setTextSize(1); landSpr.setTextColor(p.textDim, p.bg);
+  landSpr.drawString(ss, cx, 68);
+  landSpr.drawString(dl, cx, 90);
+  landSpr.setTextDatum(TL_DATUM);
+}
+
+static void drawLandscapeNormal(bool clocking) {
+  const Palette& p = characterPalette();
+
+  bool repaint = paintedOrient != clockOrient;
+  if (repaint) {
+    landSpr.fillSprite(p.bg);
+    paintedOrient = clockOrient;
+  }
+
+  // Left panel: buddy/character (only clear + redraw when animation ticks)
+  static uint32_t lastPetTick = 0;
+  if (millis() - lastPetTick >= 200) {
+    lastPetTick = millis();
+    landSpr.fillRect(0, 0, LAND_BUDDY_W, 135, p.bg);
+    if (buddyMode) {
+      buddyRenderTo(&landSpr, activeState);
+    } else {
+      lgfx::v1::LGFXBase* prevTgt = characterSetTarget(&landSpr);
+      characterSetArea(LAND_BUDDY_W, 135);
+      characterSetState(activeState);
+      characterTick();
+      characterSetArea(0, 0);
+      characterSetTarget(prevTgt);
+    }
+  }
+
+  // Right panel: clear and render text info
+  landSpr.fillRect(LAND_BUDDY_W, 0, 240 - LAND_BUDDY_W, 135, p.bg);
+
+  bool clockingRight = clocking && tama.nLines == 0;
+  if (tama.promptId[0]) {
+    drawLandscapeApproval();
+  } else if (tama.nLines > 0) {
+    drawLandscapeHUD();
+  } else if (clockingRight) {
+    drawLandscapeClockInPanel();
+  } else if (tama.msg[0]) {
+    char mb[96];
+    markMd(tama.msg, mb, sizeof(mb));
+    landSpr.setTextSize(1);
+    landSpr.setTextColor(p.text, p.bg);
+    landSpr.setCursor(LAND_TEXT_X + 4, 2);
+    landSpr.print(mb);
+  }
+
+  // Push offscreen buffer to display in one shot
+  M5.Display.setRotation(clockOrient);
+  landSpr.pushSprite(0, 0);
+  M5.Display.setRotation(0);
+}
+
 void setup() {
   Serial.begin(115200);
   // Pre-mount LittleFS: format if corrupted (first boot on new hardware)
@@ -1365,6 +1524,8 @@ void setup() {
   buddyInit();
 
   spr.createSprite(W, H);
+  landSpr.createSprite(240, 135);
+  landSpr.setFont(&efontCN_12);
   characterInit(nullptr);
   gifAvailable = characterLoaded();
   buddyMode = !(gifAvailable && speciesIdxLoad() == SPECIES_GIF);
@@ -1588,23 +1749,30 @@ void loop() {
   if (_onUsb != stableUsb) { if (++usbDebounce >= 5) { stableUsb = _onUsb; usbDebounce = 0; } }
   else usbDebounce = 0;
 
+  bool canRotate = displayMode == DISP_NORMAL
+               && !menuOpen && !settingsOpen && !resetOpen;
   bool clocking = displayMode == DISP_NORMAL
                && !menuOpen && !settingsOpen && !resetOpen && !inPrompt
                && tama.sessionsRunning == 0 && tama.sessionsWaiting == 0
                && dataRtcValid() && stableUsb;
-  if (clocking) clockUpdateOrient();
-  else { clockOrient = 0; orientFrames = 0; paintedOrient = 0; }
-  bool landscapeClock = clocking && clockOrient != 0;
+  if (canRotate) clockUpdateOrient();
+  else if (clockOrient != 0) { paintedOrient = 0; clockOrient = 0; }
+  bool isLandscape = clockOrient == 1 || clockOrient == 3;
+  bool landscapeNormal = canRotate && isLandscape;
+  bool landscapeClock = clocking && isLandscape;
 
   static bool wasClocking = false;
   static bool wasLandscape = false;
-  if (clocking != wasClocking || landscapeClock != wasLandscape) {
-    if (clocking && !landscapeClock) characterSetPeek(true);
-    else applyDisplayMode();
+  static uint8_t wasOrient = 0;
+  bool anyLandscape = landscapeNormal;
+  if (clocking != wasClocking || anyLandscape != wasLandscape || clockOrient != wasOrient) {
+    if (clocking && !anyLandscape) characterSetPeek(true);
+    else if (!anyLandscape) applyDisplayMode();
     characterInvalidate();
     if (buddyMode) buddyInvalidate();
     wasClocking = clocking;
-    wasLandscape = landscapeClock;
+    wasLandscape = anyLandscape;
+    wasOrient = clockOrient;
   }
   if (clocking) {
     uint8_t dow = clockDow();
@@ -1626,7 +1794,9 @@ void loop() {
   if (pk && !lastPasskey) { wake(); beep(1800, 60); }
   lastPasskey = pk;
 
-  if (napping || screenOff || landscapeClock) {
+  if (landscapeNormal) {
+    // landscape split-screen renders directly to M5.Display
+  } else if (napping || screenOff) {
     // skip sprite render
   } else if (buddyMode) {
     buddyTick(activeState);
@@ -1655,8 +1825,8 @@ void loop() {
       spr.print(T(S_NO_CHAR));
     }
   }
-  if (landscapeClock) {
-    drawClock();
+  if (landscapeNormal) {
+    drawLandscapeNormal(clocking);
   } else if (!napping && !screenOff) {
     if (blePasskey()) drawPasskey();
     else if (clocking) drawClock();
@@ -1666,7 +1836,9 @@ void loop() {
     if (resetOpen) drawReset();
     else if (settingsOpen) drawSettings();
     else if (menuOpen) drawMenu();
+    if (clockOrient == 2) M5.Display.setRotation(2);
     spr.pushSprite(0, 0);
+    if (clockOrient == 2) M5.Display.setRotation(0);
   }
 
   // Face-down nap

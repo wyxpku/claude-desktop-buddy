@@ -18,5 +18,12 @@ void characterClose();
 
 void characterSetPeek(bool peek);
 void characterRenderTo(lgfx::v1::LGFXBase* tgt, int cx, int cy);
+lgfx::v1::LGFXBase* characterSetTarget(lgfx::v1::LGFXBase* tgt);
 
 const Palette& characterPalette();
+
+// Returns GIF bounding box on current target (only valid when GIF is open)
+void characterGetRect(int* x, int* y, int* w, int* h);
+
+// Override the centering area (0,0 = use target dimensions)
+void characterSetArea(int w, int h);

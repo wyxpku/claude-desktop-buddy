@@ -38,11 +38,15 @@ static int         gifX = 0, gifY = 0, gifW = 0, gifH = 0;
 static const int   PEEK_TOP = 70;
 static bool        peekMode = false;
 static lgfx::v1::LGFXBase* _tgt = &spr;
+static int areaW = 0, areaH = 0;  // 0 = use target dimensions
 static void gifPlace() {
   int outW = peekMode ? gifW / 2 : gifW;
   int outH = peekMode ? gifH / 2 : gifH;
-  gifX = (spr.width() - outW) / 2;
-  gifY = peekMode ? (PEEK_TOP - outH) / 2 : (110 - outH) / 2;
+  int tw = areaW > 0 ? areaW : _tgt->width();
+  gifX = (tw - outW) / 2;
+  // Portrait: center in top 110px (leave room for HUD). Landscape: center in full 135px.
+  int vArea = peekMode ? PEEK_TOP : (areaH > 0 ? areaH : 110);
+  gifY = (vArea - outH) / 2;
 }
 static uint32_t    nextFrameAt = 0;
 static uint32_t    animPauseUntil = 0;
@@ -230,6 +234,15 @@ bool characterInit(const char* name) {
 bool characterLoaded() { return loaded; }
 const Palette& characterPalette() { return pal; }
 
+void characterGetRect(int* x, int* y, int* w, int* h) {
+  if (!gifOpen) { *x = *y = *w = *h = 0; return; }
+  int ow = peekMode ? gifW / 2 : gifW;
+  int oh = peekMode ? gifH / 2 : gifH;
+  *x = gifX; *y = gifY; *w = ow; *h = oh;
+}
+
+void characterSetArea(int w, int h) { areaW = w; areaH = h; }
+
 void characterRenderTo(lgfx::v1::LGFXBase* tgt, int cx, int cy) {
   if (!gifOpen) return;
   lgfx::v1::LGFXBase* prevT = _tgt; bool prevP = peekMode; int px = gifX, py = gifY;
@@ -249,6 +262,12 @@ void characterSetPeek(bool peek) {
   if (peekMode == peek) return;
   peekMode = peek;
   characterInvalidate();
+}
+
+lgfx::v1::LGFXBase* characterSetTarget(lgfx::v1::LGFXBase* tgt) {
+  lgfx::v1::LGFXBase* prev = _tgt;
+  _tgt = tgt;
+  return prev;
 }
 
 void characterClose() {
