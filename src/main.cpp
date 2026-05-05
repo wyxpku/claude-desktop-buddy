@@ -117,6 +117,33 @@ static void beep(uint16_t freq, uint16_t dur) {
   if (settings().sound) M5.Speaker.tone(freq, dur);
 }
 
+// Periodic alert chime while a permission prompt is pending.
+// Plays two ascending tones, then waits ALERT_INTERVAL_MS before repeating.
+static const uint16_t ALERT_INTERVAL_MS = 4000;
+static uint32_t alertNextTone = 0;
+static uint8_t  alertStep = 0;  // 0=idle 1=first tone 2=second tone 3=waiting
+
+static void alertStart() {
+  if (!settings().sound) return;
+  alertStep = 1;
+  alertNextTone = 0;
+}
+
+static void alertStop() {
+  alertStep = 0;
+  M5.Speaker.stop();
+}
+
+static void alertTick() {
+  if (alertStep == 0 || !settings().sound) return;
+  uint32_t now = millis();
+  if (now < alertNextTone) return;
+  switch (alertStep) {
+    case 1: M5.Speaker.tone(880, 120);  alertNextTone = now + 140; alertStep = 2; break;
+    case 2: M5.Speaker.tone(1320, 180); alertNextTone = now + ALERT_INTERVAL_MS; alertStep = 1; break;
+  }
+}
+
 static void sendCmd(const char* json) {
   Serial.println(json);
   size_t n = strlen(json);
@@ -1376,6 +1403,7 @@ void loop() {
   dataPoll(&tama);
   if (statsPollLevelUp()) triggerOneShot(P_CELEBRATE, 3000);
   baseState = derive(tama);
+  alertTick();
 
   if (baseState == P_IDLE && (int32_t)(now - wakeTransitionUntil) < 0) baseState = P_SLEEP;
 
@@ -1410,12 +1438,14 @@ void loop() {
     if (tama.promptId[0]) {
       promptArrivedMs = millis();
       wake();
-      beep(1200, 80);
+      alertStart();
       displayMode = DISP_NORMAL;
       menuOpen = settingsOpen = resetOpen = false; settingsSubPage = 0;
       applyDisplayMode();
       characterInvalidate();
       if (buddyMode) buddyInvalidate();
+    } else {
+      alertStop();
     }
   }
 
@@ -1463,6 +1493,7 @@ void loop() {
         snprintf(cmd, sizeof(cmd), "{\"cmd\":\"permission\",\"id\":\"%s\",\"decision\":\"once\"}", tama.promptId);
         sendCmd(cmd);
         responseSent = true;
+        alertStop();
         uint32_t tookS = (millis() - promptArrivedMs) / 1000;
         statsOnApproval(tookS);
         beep(2400, 60);
@@ -1500,6 +1531,7 @@ void loop() {
       snprintf(cmd, sizeof(cmd), "{\"cmd\":\"permission\",\"id\":\"%s\",\"decision\":\"deny\"}", tama.promptId);
       sendCmd(cmd);
       responseSent = true;
+      alertStop();
       statsOnDenial();
       beep(600, 60);
     } else if (settingsOpen && settingsSubPage == 1) {
