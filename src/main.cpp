@@ -260,26 +260,32 @@ static void drawSettings() {
   bool vals[] = { s.sound, s.bt, s.wifi, s.led, s.hud };
   for (int i = 0; i < SETTINGS_N; i++) {
     bool sel = (i == settingsSel);
+    int iy = my + 8 + i * FH;
     spr.setTextColor(sel ? p.text : p.textDim, PANEL);
-    spr.setCursor(mx + 6, my + 8 + i * FH);
+    spr.setCursor(mx + 6, iy);
     spr.print(sel ? "> " : "  ");
     spr.print(T(settingsIds[i]));
-    spr.setCursor(mx + mw - 36, my + 8 + i * FH);
-    spr.setTextColor(p.textDim, PANEL);
+    // Compute value string, then right-align
+    char vb[16] = ""; uint16_t vc = p.textDim;
     if (i == 0) {
-      spr.printf("%u/4", brightLevel);
+      snprintf(vb, sizeof(vb), "%u/4", brightLevel);
     } else if (i >= 1 && i <= 5) {
-      spr.setTextColor(vals[i-1] ? GREEN : p.textDim, PANEL);
-      spr.print(vals[i-1] ? T(S_ON) : T(S_OFF));
+      vc = vals[i-1] ? GREEN : p.textDim;
+      strncpy(vb, vals[i-1] ? T(S_ON) : T(S_OFF), sizeof(vb)-1);
     } else if (i == 6) {
-      spr.print(s.lang == LANG_EN ? T(S_ENGLISH) : T(S_CHINESE));
+      strncpy(vb, s.lang == LANG_EN ? T(S_ENGLISH) : T(S_CHINESE), sizeof(vb)-1);
     } else if (i == 7) {
       static const StrID rotIds[] = { S_AUTO, S_PORT, S_LAND };
-      spr.print(T(rotIds[s.clockRot]));
+      strncpy(vb, T(rotIds[s.clockRot]), sizeof(vb)-1);
     } else if (i == 8) {
       uint8_t total = buddySpeciesCount() + (gifAvailable ? 1 : 0);
       uint8_t pos   = buddyMode ? buddySpeciesIdx() + 1 : total;
-      spr.printf("%u/%u", pos, total);
+      snprintf(vb, sizeof(vb), "%u/%u", pos, total);
+    }
+    if (vb[0]) {
+      spr.setTextColor(vc, PANEL);
+      spr.setCursor(mx + mw - spr.textWidth(vb) - 6, iy);
+      spr.print(vb);
     }
   }
   drawMenuHints(p, mx, mw, my + mh - 12, T(S_NEXT), T(S_CHANGE));
@@ -331,11 +337,17 @@ void drawMenu() {
   spr.setTextSize(1);
   for (int i = 0; i < MENU_N; i++) {
     bool sel = (i == menuSel);
+    int iy = my + 8 + i * FH;
     spr.setTextColor(sel ? p.text : p.textDim, PANEL);
-    spr.setCursor(mx + 6, my + 8 + i * FH);
+    spr.setCursor(mx + 6, iy);
     spr.print(sel ? "> " : "  ");
     spr.print(T(menuIds[i]));
-    if (i == 4) spr.print(dataDemo() ? T(S_ON) : T(S_OFF));
+    if (i == 4) {
+      const char* dv = dataDemo() ? T(S_ON) : T(S_OFF);
+      spr.setTextColor(dataDemo() ? GREEN : p.textDim, PANEL);
+      spr.setCursor(mx + mw - spr.textWidth(dv) - 6, iy);
+      spr.print(dv);
+    }
   }
   drawMenuHints(p, mx, mw, my + mh - 12);
 }
@@ -492,15 +504,20 @@ static uint8_t wrapInto(const char* in, char out[][36], uint8_t maxRows, uint8_t
   while (*p && row < maxRows) {
     if (*p == ' ' && col > 0) {
       const char* wp = p + 1;
-      int wpx = 0;
-      while (*wp && *wp != ' ') {
-        uint8_t bl; utf8cp(wp, bl); wpx += charPx(bl); wp += bl ? bl : 1;
-      }
-      if (px + charPx(1) + wpx > maxPx) {
-        out[row][col] = 0;
-        if (++row >= maxRows) return row;
-        col = 0; px = 0;
-        p++; continue;
+      // If next word starts with CJK, skip lookahead — CJK can break
+      // anywhere. Word lookahead would orphan short English words (e.g.
+      // "Claude") on their own line between CJK runs.
+      if ((*wp & 0x80) == 0) {
+        int wpx = 0;
+        while (*wp && *wp != ' ') {
+          uint8_t bl; utf8cp(wp, bl); wpx += charPx(bl); wp += bl ? bl : 1;
+        }
+        if (px + charPx(1) + wpx > maxPx) {
+          out[row][col] = 0;
+          if (++row >= maxRows) return row;
+          col = 0; px = 0;
+          p++; continue;
+        }
       }
       out[row][col++] = ' '; px += charPx(1);
       p++; continue;
@@ -524,20 +541,21 @@ static uint8_t wrapInto(const char* in, char out[][36], uint8_t maxRows, uint8_t
 }
 
 // --- Auto-layout system ---------------------------------------------------
-struct TextItem { const char* text; uint16_t color; };
+struct TextItem { const char* text; uint16_t color; const char* value; };
 static TextItem _infoItems[30];
 static uint8_t  _infoItemCount;
 
 static char     _pageRows[40][36];
 static uint16_t _pageRowColor[40];
 static uint8_t  _pageRowCount;
+static const char* _pageRowValue[40];
 
-static char     _fmtBuf[10][48];
+static char     _fmtBuf[10][320];
 static uint8_t  _fmtIdx;
 
 static const char* _fmt(const char* fmt, ...) {
   char* b = _fmtBuf[_fmtIdx % 10];
-  va_list a; va_start(a, fmt); vsnprintf(b, 48, fmt, a); va_end(a);
+  va_list a; va_start(a, fmt); vsnprintf(b, sizeof(_fmtBuf[0]), fmt, a); va_end(a);
   return _fmtBuf[_fmtIdx++ % 10];
 }
 
@@ -547,10 +565,21 @@ static void layoutItems(const TextItem* items, uint8_t n) {
     if (!items[i].text || !items[i].text[0]) continue;
     uint8_t room = 40 - _pageRowCount;
     if (room == 0) break;
-    uint8_t got = wrapInto(items[i].text, &_pageRows[_pageRowCount], room, 0);
-    for (uint8_t j = 0; j < got; j++)
-      _pageRowColor[_pageRowCount + j] = items[i].color;
-    _pageRowCount += got;
+    if (items[i].value) {
+      // Stat line: one row, label left + value right
+      strncpy(_pageRows[_pageRowCount], items[i].text, 35);
+      _pageRows[_pageRowCount][35] = 0;
+      _pageRowColor[_pageRowCount] = items[i].color;
+      _pageRowValue[_pageRowCount] = items[i].value;
+      _pageRowCount++;
+    } else {
+      uint8_t got = wrapInto(items[i].text, &_pageRows[_pageRowCount], room, 0);
+      for (uint8_t j = 0; j < got; j++) {
+        _pageRowColor[_pageRowCount + j] = items[i].color;
+        _pageRowValue[_pageRowCount + j] = nullptr;
+      }
+      _pageRowCount += got;
+    }
   }
 }
 
@@ -560,46 +589,35 @@ static void buildAboutPage(const Palette& p) {
   auto& it = _infoItems; uint8_t i = 0;
   it[i++] = {T(S_ABOUT_1), p.textDim};
   it[i++] = {T(S_ABOUT_2), p.textDim};
-  it[i++] = {T(S_ABOUT_3), p.textDim};
-  it[i++] = {T(S_ABOUT_4), p.textDim};
-  it[i++] = {T(S_ABOUT_5), p.textDim};
-  it[i++] = {T(S_ABOUT_6), p.textDim};
-  it[i++] = {T(S_ABOUT_7), p.textDim};
-  it[i++] = {T(S_ABOUT_8), p.text};
-  it[i++] = {T(S_ABOUT_9), p.text};
-  it[i++] = {T(S_ABOUT_10), p.textDim};
-  it[i++] = {T(S_ASCII_PET_HINT), p.textDim};
   _infoItemCount = i;
 }
 
 static void buildButtonsPage(const Palette& p) {
   auto& it = _infoItems; uint8_t i = 0;
-  it[i++] = {T(S_A_FRONT), p.text};
-  it[i++] = {T(S_NEXT_SCREEN), p.textDim};
-  it[i++] = {T(S_APPROVE_PROMPT), p.textDim};
-  it[i++] = {T(S_B_RIGHT), p.text};
-  it[i++] = {T(S_NEXT_PAGE), p.textDim};
-  it[i++] = {T(S_DENY_PROMPT), p.textDim};
-  it[i++] = {T(S_HOLD_A), p.text};
-  it[i++] = {T(S_MENU), p.textDim};
-  it[i++] = {T(S_POWER), p.text};
-  it[i++] = {T(S_TAP_OFF_HOLD_PWR), p.textDim};
+  it[i++] = {_fmt("%s:", T(S_A_FRONT)), p.text};
+  it[i++] = {_fmt("  %s, %s", T(S_NEXT_SCREEN), T(S_APPROVE_PROMPT)), p.textDim};
+  it[i++] = {_fmt("%s:", T(S_B_RIGHT)), p.text};
+  it[i++] = {_fmt("  %s, %s", T(S_NEXT_PAGE), T(S_DENY_PROMPT)), p.textDim};
+  it[i++] = {_fmt("%s:", T(S_HOLD_A)), p.text};
+  it[i++] = {_fmt("  %s", T(S_MENU)), p.textDim};
+  it[i++] = {_fmt("%s:", T(S_POWER)), p.text};
+  it[i++] = {_fmt("  %s", T(S_TAP_OFF_HOLD_PWR)), p.textDim};
   _infoItemCount = i;
 }
 
 static void buildClaudePage(const Palette& p) {
   auto& it = _infoItems; uint8_t i = 0;
-  it[i++] = {_fmt(T(S_SESSIONS), tama.sessionsTotal), p.textDim};
-  it[i++] = {_fmt(T(S_RUNNING), tama.sessionsRunning), p.textDim};
-  it[i++] = {_fmt(T(S_WAITING), tama.sessionsWaiting), p.textDim};
+  it[i++] = {T(S_SESSIONS), p.textDim, _fmt("%u", tama.sessionsTotal)};
+  it[i++] = {T(S_RUNNING), p.textDim, _fmt("%u", tama.sessionsRunning)};
+  it[i++] = {T(S_WAITING), p.textDim, _fmt("%u", tama.sessionsWaiting)};
   it[i++] = {T(S_LINK), p.text};
   const char* sec = dataScenarioName();
-  it[i++] = {_fmt(T(S_VIA), sec), p.textDim};
+  it[i++] = {T(S_VIA), p.textDim, sec};
   const char* bleState = !bleConnected() ? "-" : bleSecure() ? T(S_ENCRYPTED) : T(S_OPEN);
-  it[i++] = {_fmt(T(S_BLE), bleState), p.textDim};
+  it[i++] = {T(S_BLE), p.textDim, bleState};
   uint32_t age = (millis() - tama.lastUpdated) / 1000;
-  it[i++] = {_fmt(T(S_LAST_MSG), (unsigned long)age), p.textDim};
-  it[i++] = {_fmt(T(S_STATE), stateNames[activeState]), p.textDim};
+  it[i++] = {T(S_LAST_MSG), p.textDim, _fmt("%lus", (unsigned long)age)};
+  it[i++] = {T(S_STATE), p.textDim, stateNames[activeState]};
   _infoItemCount = i;
 }
 
@@ -614,15 +632,15 @@ static void buildDevicePage(const Palette& p) {
   bool full = usb && vBat_mV > 4100 && abs(iBat_mA) < 10;
   const char* batState = full ? T(S_FULL) : (charging ? T(S_CHARGING) : (usb ? T(S_USB) : T(S_BATTERY_STATE)));
   it[i++] = {_fmt("%d%% %s", pct, batState), full ? GREEN : (charging ? HOT : p.textDim)};
-  it[i++] = {_fmt(T(S_BATTERY), vBat_mV/1000, (abs(vBat_mV)%1000)/10), p.textDim};
-  it[i++] = {_fmt(T(S_CURRENT), iBat_mA), p.textDim};
+  it[i++] = {T(S_BATTERY), p.textDim, _fmt("%d.%02dV", vBat_mV/1000, (abs(vBat_mV)%1000)/10)};
+  it[i++] = {T(S_CURRENT), p.textDim, _fmt("%+dmA", iBat_mA)};
   it[i++] = {T(S_SYSTEM), p.text};
-  if (ownerName()[0]) it[i++] = {_fmt(T(S_OWNER), ownerName()), p.textDim};
+  if (ownerName()[0]) it[i++] = {T(S_OWNER), p.textDim, ownerName()};
   uint32_t up = millis() / 1000;
-  it[i++] = {_fmt(T(S_UPTIME), up / 3600, (up / 60) % 60), p.textDim};
-  it[i++] = {_fmt(T(S_HEAP), ESP.getFreeHeap() / 1024), p.textDim};
-  it[i++] = {_fmt(T(S_BRIGHT), brightLevel), p.textDim};
-  it[i++] = {_fmt(T(S_BT), settings().bt ? (dataBtActive() ? T(S_LINKED) : "on") : T(S_OFF)), p.textDim};
+  it[i++] = {T(S_UPTIME), p.textDim, _fmt("%luh %02lum", up / 3600, (up / 60) % 60)};
+  it[i++] = {T(S_HEAP), p.textDim, _fmt("%uKB", ESP.getFreeHeap() / 1024)};
+  it[i++] = {T(S_BRIGHT), p.textDim, _fmt("%u/4", brightLevel)};
+  it[i++] = {T(S_BT), p.textDim, settings().bt ? (dataBtActive() ? T(S_LINKED) : "on") : T(S_OFF)};
   _infoItemCount = i;
 }
 
@@ -637,7 +655,7 @@ static void buildBluetoothPage(const Palette& p) {
     mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]), p.textDim};
   if (linked) {
     uint32_t age = (millis() - tama.lastUpdated) / 1000;
-    it[i++] = {_fmt(T(S_LAST_MSG), (unsigned long)age), p.textDim};
+    it[i++] = {T(S_LAST_MSG), p.textDim, _fmt("%lus", (unsigned long)age)};
   } else if (settings().bt) {
     it[i++] = {T(S_TO_PAIR), p.text};
     it[i++] = {T(S_OPEN_CLAUDE), p.textDim};
@@ -650,14 +668,9 @@ static void buildBluetoothPage(const Palette& p) {
 
 static void buildCreditsPage(const Palette& p) {
   auto& it = _infoItems; uint8_t i = 0;
-  it[i++] = {T(S_MADE_BY), p.textDim};
-  it[i++] = {T(S_FELIX), p.text};
-  it[i++] = {T(S_SOURCE), p.textDim};
-  it[i++] = {"github.com/anthropics", p.text};
-  it[i++] = {"/claude-desktop-buddy", p.text};
-  it[i++] = {T(S_HARDWARE), p.textDim};
-  it[i++] = {"M5StickS3", p.text};
-  it[i++] = {"ESP32-S3 + M5PM1", p.text};
+  it[i++] = {_fmt("%s %s", T(S_MADE_BY), T(S_FELIX)), p.textDim};
+  it[i++] = {_fmt("%s %s", T(S_SOURCE), "github.com/anthropics/claude-desktop-buddy"), p.textDim};
+  it[i++] = {_fmt("%s %s", T(S_HARDWARE), "M5StickS3, ESP32-S3"), p.textDim};
   _infoItemCount = i;
 }
 
@@ -715,23 +728,48 @@ void drawInfo() {
   if (_pageScroll >= _pageRowCount) _pageScroll = 0;
   if (maxVis > _pageRowCount - _pageScroll) maxVis = _pageRowCount - _pageScroll;
 
-  for (uint8_t r = 0; r < maxVis; r++) {
+  for (uint8_t r = 0; r < maxVis; ) {
     uint8_t ri = _pageScroll + r;
-    spr.setTextColor(_pageRowColor[ri], p.bg);
-    spr.setCursor(4, y + r * FH);
-    bool isLastVis = (r == maxVis - 1);
-    bool hasMore = (ri + 1 < _pageRowCount);
-    if (isLastVis && hasMore) {
-      char tmp[36]; memcpy(tmp, _pageRows[ri], 36);
-      int px = 0; uint8_t j = 0;
-      while (tmp[j] && px < 127 - 24) {
-        uint8_t bl; utf8cp(&tmp[j], bl); if (!bl) break;
-        px += charPx(bl); j += bl;
+    int rowY = y + r * FH;
+
+    if (_pageRowValue[ri]) {
+      // Find consecutive stat group
+      uint8_t gEnd = r + 1;
+      while (gEnd < maxVis && _pageRowValue[_pageScroll + gEnd]) gEnd++;
+      // Max label width → value alignment point
+      int maxLW = 0;
+      for (uint8_t g = r; g < gEnd; g++) {
+        int w = spr.textWidth(_pageRows[_pageScroll + g]);
+        if (w > maxLW) maxLW = w;
       }
-      tmp[j] = 0;
-      spr.print(tmp); spr.print("...");
+      int valX = 4 + maxLW + 10;
+      for (uint8_t g = r; g < gEnd; g++) {
+        uint8_t gi = _pageScroll + g;
+        spr.setTextColor(_pageRowColor[gi], p.bg);
+        spr.setCursor(4, y + g * FH);
+        spr.print(_pageRows[gi]);
+        spr.setCursor(valX, y + g * FH);
+        spr.print(_pageRowValue[gi]);
+      }
+      r = gEnd;
     } else {
-      spr.print(_pageRows[ri]);
+      spr.setTextColor(_pageRowColor[ri], p.bg);
+      spr.setCursor(4, rowY);
+      bool isLastVis = (r == maxVis - 1);
+      bool hasMore = (ri + 1 < _pageRowCount);
+      if (isLastVis && hasMore) {
+        char tmp[36]; memcpy(tmp, _pageRows[ri], 36);
+        int px = 0; uint8_t j = 0;
+        while (tmp[j] && px < 127 - 24) {
+          uint8_t bl; utf8cp(&tmp[j], bl); if (!bl) break;
+          px += charPx(bl); j += bl;
+        }
+        tmp[j] = 0;
+        spr.print(tmp); spr.print("...");
+      } else {
+        spr.print(_pageRows[ri]);
+      }
+      r++;
     }
   }
 
@@ -855,18 +893,25 @@ static void drawPetStats(const Palette& p) {
 
   y += badgeH + 6;
   spr.setTextColor(p.textDim, p.bg);
-  spr.setCursor(6, y);
-  spr.printf(T(S_APPROVED), stats().approvals);
-  spr.setCursor(6, y + FH);
-  spr.printf(T(S_DENIED), stats().denials);
+  // Compute value alignment: max label width in stats block
+  const char* sLabels[] = { T(S_APPROVED), T(S_DENIED), T(S_NAPPED), T(S_TOKENS), T(S_TODAY) };
+  int maxLW = 0;
+  for (int j = 0; j < 5; j++) { int w = spr.textWidth(sLabels[j]); if (w > maxLW) maxLW = w; }
+  int valX = 6 + maxLW + 10;
+
+  spr.setCursor(6, y);          spr.print(T(S_APPROVED));
+  spr.setCursor(valX, y);       spr.printf("%u", stats().approvals);
+  spr.setCursor(6, y + FH);     spr.print(T(S_DENIED));
+  spr.setCursor(valX, y + FH);  spr.printf("%u", stats().denials);
   uint32_t nap = stats().napSeconds;
-  spr.setCursor(6, y + FH * 2);
-  spr.printf(T(S_NAPPED), nap/3600, (nap/60)%60);
+  spr.setCursor(6, y + FH * 2);     spr.print(T(S_NAPPED));
+  spr.setCursor(valX, y + FH * 2);  spr.printf("%luh%02lum", nap/3600, (nap/60)%60);
   auto tokFmt = [&](const char* label, uint32_t v, int yPx) {
-    spr.setCursor(6, yPx);
-    if (v >= 1000000)   spr.printf("%s%lu.%luM", label, v/1000000, (v/100000)%10);
-    else if (v >= 1000) spr.printf("%s%lu.%luK", label, v/1000, (v/100)%10);
-    else                spr.printf("%s%lu", label, v);
+    spr.setCursor(6, yPx); spr.print(label);
+    spr.setCursor(valX, yPx);
+    if (v >= 1000000)   spr.printf("%lu.%luM", v/1000000, (v/100000)%10);
+    else if (v >= 1000) spr.printf("%lu.%luK", v/1000, (v/100)%10);
+    else                spr.printf("%lu", v);
   };
   tokFmt(T(S_TOKENS), stats().tokens, y + FH * 3);
   tokFmt(T(S_TODAY), tama.tokensToday, y + FH * 4);
@@ -877,13 +922,20 @@ static void drawPetHowTo(const Palette& p) {
   spr.fillRect(0, TOP, W, H - TOP, p.bg);
   spr.setTextSize(1);
 
-  _fmtIdx = 0;
   auto& it = _infoItems; uint8_t i = 0;
-  it[i++] = {_fmt("%s %s %s", T(S_HOW_MOOD), T(S_APPROVE_FAST), T(S_DENY_LOTS)), p.textDim};
-  it[i++] = {_fmt("%s %s %s", T(S_HOW_FED), T(S_50K_TOKENS), T(S_LEVEL_UP)), p.textDim};
-  it[i++] = {_fmt("%s %s %s", T(S_HOW_ENERGY), T(S_FACE_DOWN), T(S_REFILLS)), p.textDim};
-  it[i++] = {_fmt("%s %s", T(S_IDLE_OFF), T(S_BTN_WAKE)), p.textDim};
-  it[i++] = {_fmt("%s %s", T(S_A_SCREEN_B_PAGE), T(S_HOLD_A_MENU)), p.textDim};
+  it[i++] = {T(S_HOW_MOOD), p.body};
+  it[i++] = {T(S_APPROVE_FAST), p.textDim};
+  it[i++] = {T(S_DENY_LOTS), p.textDim};
+  it[i++] = {T(S_HOW_FED), p.body};
+  it[i++] = {T(S_50K_TOKENS), p.textDim};
+  it[i++] = {T(S_LEVEL_UP), p.textDim};
+  it[i++] = {T(S_HOW_ENERGY), p.body};
+  it[i++] = {T(S_FACE_DOWN), p.textDim};
+  it[i++] = {T(S_REFILLS), p.textDim};
+  it[i++] = {T(S_IDLE_OFF), p.textDim};
+  it[i++] = {T(S_BTN_WAKE), p.textDim};
+  it[i++] = {T(S_A_SCREEN_B_PAGE), p.textDim};
+  it[i++] = {T(S_HOLD_A_MENU), p.textDim};
   layoutItems(_infoItems, i);
 
   int y = TOP + 4;
@@ -891,23 +943,46 @@ static void drawPetHowTo(const Palette& p) {
   if (_pageScroll >= _pageRowCount) _pageScroll = 0;
   if (maxVis > _pageRowCount - _pageScroll) maxVis = _pageRowCount - _pageScroll;
 
-  for (uint8_t r = 0; r < maxVis; r++) {
+  for (uint8_t r = 0; r < maxVis; ) {
     uint8_t ri = _pageScroll + r;
-    spr.setTextColor(_pageRowColor[ri], p.bg);
-    spr.setCursor(4, y + r * FH);
-    bool isLastVis = (r == maxVis - 1);
-    bool hasMore = (ri + 1 < _pageRowCount);
-    if (isLastVis && hasMore) {
-      char tmp[36]; memcpy(tmp, _pageRows[ri], 36);
-      int px = 0; uint8_t j = 0;
-      while (tmp[j] && px < 127 - 24) {
-        uint8_t bl; utf8cp(&tmp[j], bl); if (!bl) break;
-        px += charPx(bl); j += bl;
+    int rowY = y + r * FH;
+
+    if (_pageRowValue[ri]) {
+      uint8_t gEnd = r + 1;
+      while (gEnd < maxVis && _pageRowValue[_pageScroll + gEnd]) gEnd++;
+      int maxLW = 0;
+      for (uint8_t g = r; g < gEnd; g++) {
+        int w = spr.textWidth(_pageRows[_pageScroll + g]);
+        if (w > maxLW) maxLW = w;
       }
-      tmp[j] = 0;
-      spr.print(tmp); spr.print("...");
+      int valX = 4 + maxLW + 10;
+      for (uint8_t g = r; g < gEnd; g++) {
+        uint8_t gi = _pageScroll + g;
+        spr.setTextColor(_pageRowColor[gi], p.bg);
+        spr.setCursor(4, y + g * FH);
+        spr.print(_pageRows[gi]);
+        spr.setCursor(valX, y + g * FH);
+        spr.print(_pageRowValue[gi]);
+      }
+      r = gEnd;
     } else {
-      spr.print(_pageRows[ri]);
+      spr.setTextColor(_pageRowColor[ri], p.bg);
+      spr.setCursor(4, rowY);
+      bool isLastVis = (r == maxVis - 1);
+      bool hasMore = (ri + 1 < _pageRowCount);
+      if (isLastVis && hasMore) {
+        char tmp[36]; memcpy(tmp, _pageRows[ri], 36);
+        int px = 0; uint8_t j = 0;
+        while (tmp[j] && px < 127 - 24) {
+          uint8_t bl; utf8cp(&tmp[j], bl); if (!bl) break;
+          px += charPx(bl); j += bl;
+        }
+        tmp[j] = 0;
+        spr.print(tmp); spr.print("...");
+      } else {
+        spr.print(_pageRows[ri]);
+      }
+      r++;
     }
   }
 
