@@ -76,6 +76,10 @@ inline const char* dataScenarioName() {
 // Set true once the bridge sends a time sync.
 static bool _rtcValid = false;
 inline bool dataRtcValid() { return _rtcValid; }
+// Software clock fallback when BM8563 is absent
+static uint32_t _swEpoch  = 0;   // epoch seconds from bridge
+static int32_t  _swTzOff  = 0;   // timezone offset seconds
+static uint32_t _swSyncMs = 0;   // millis() when last synced
 
 static void _applyJson(const char* line, TamaState* out) {
   JsonDocument doc;
@@ -85,7 +89,10 @@ static void _applyJson(const char* line, TamaState* out) {
   // Bridge sends {"time":[epoch_sec, tz_offset_sec]}
   JsonArray t = doc["time"];
   if (!t.isNull() && t.size() == 2) {
-    time_t local = (time_t)t[0].as<uint32_t>() + (int32_t)t[1];
+    _swEpoch  = (uint32_t)t[0].as<uint32_t>();
+    _swTzOff  = (int32_t)t[1];
+    _swSyncMs = millis();
+    time_t local = (time_t)_swEpoch + _swTzOff;
     struct tm lt; gmtime_r(&local, &lt);
     m5::rtc_time_t tm(lt);
     m5::rtc_date_t dt;

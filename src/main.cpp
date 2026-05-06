@@ -523,16 +523,30 @@ static void clockRefreshRtc() {
   m5::rtc_time_t tm = M5.Rtc.getTime();
   m5::rtc_date_t dt = M5.Rtc.getDate();
   // Reject garbage from I2C read failures (BM8563 returns 0xFF).
-  if (tm.hours < 0 || tm.hours > 23 || tm.minutes < 0 || tm.minutes > 59
+  if (!(tm.hours < 0 || tm.hours > 23 || tm.minutes < 0 || tm.minutes > 59
       || tm.seconds < 0 || tm.seconds > 59
-      || dt.month < 1 || dt.month > 12 || dt.date < 1 || dt.date > 31) {
-    if (++_rtcBadCount >= 5) _rtcValid = false;
+      || dt.month < 1 || dt.month > 12 || dt.date < 1 || dt.date > 31)) {
+    _rtcBadCount = 0;
+    _rtcValid = true;
+    _clkTm = tm;
+    _clkDt = dt;
     return;
   }
-  _rtcBadCount = 0;
-  _rtcValid = true;
-  _clkTm = tm;
-  _clkDt = dt;
+  // Hardware RTC failed — use software clock from bridge sync
+  if (_swSyncMs > 0) {
+    time_t elapsed = (millis() - _swSyncMs) / 1000;
+    time_t local = (time_t)_swEpoch + _swTzOff + elapsed;
+    struct tm lt; gmtime_r(&local, &lt);
+    _clkTm = m5::rtc_time_t(lt);
+    _clkDt.year = (int16_t)(lt.tm_year + 1900);
+    _clkDt.month = (int8_t)(lt.tm_mon + 1);
+    _clkDt.date = (int8_t)lt.tm_mday;
+    _clkDt.weekDay = (int8_t)lt.tm_wday;
+    _rtcBadCount = 0;
+    _rtcValid = true;
+    return;
+  }
+  if (++_rtcBadCount >= 5) _rtcValid = false;
 }
 
 static uint8_t gravityOrient() {
