@@ -515,11 +515,14 @@ static m5::rtc_time_t _clkTm;
 static m5::rtc_date_t _clkDt;
 uint32_t               _clkLastRead = 0;
 static bool            _onUsb       = false;
+static bool            _stableUsb   = false;
+static uint32_t        _lastUsbMs   = 0;  // last millis() when _onUsb was true
 static uint8_t _rtcBadCount = 0;
 static void clockRefreshRtc() {
   if (millis() - _clkLastRead < 1000) return;
   _clkLastRead = millis();
   _onUsb = M5.Power.isCharging() != m5::Power_Class::is_discharging;
+  if (_onUsb) _lastUsbMs = millis();
   m5::rtc_time_t tm = M5.Rtc.getTime();
   m5::rtc_date_t dt = M5.Rtc.getDate();
   // Reject garbage from I2C read failures (BM8563 returns 0xFF).
@@ -602,11 +605,11 @@ static void drawClock() {
   else snprintf(dl, sizeof(dl), "%s %d", T(monIds[mi]), _clkDt.date);
 
   paintedOrient = 0;
-  spr.fillRect(0, 90, W, H - 90, p.bg);
+  spr.fillRect(0, 118, W, H - 118, p.bg);
   spr.setTextDatum(MC_DATUM);
-  spr.setTextSize(3); spr.setTextColor(p.text, p.bg);    spr.drawString(hm, CX, 140);
-  spr.setTextSize(1); spr.setTextColor(p.textDim, p.bg); spr.drawString(ss, CX, 170);
-                                                       spr.drawString(dl, CX, 190);
+  spr.setTextSize(3); spr.setTextColor(p.text, p.bg);    spr.drawString(hm, CX, 155);
+  spr.setTextSize(1); spr.setTextColor(p.textDim, p.bg); spr.drawString(ss, CX, 185);
+                                                       spr.drawString(dl, CX, 205);
   spr.setTextDatum(TL_DATUM);
 }
 
@@ -2054,11 +2057,10 @@ void loop() {
     }
   }
 
-  // Charging clock — debounce _onUsb to prevent rapid clock/HUD flicker
+  // USB debounce for clocking state only
   clockRefreshRtc();
-  static bool stableUsb = false;
   static uint8_t usbDebounce = 0;
-  if (_onUsb != stableUsb) { if (++usbDebounce >= 5) { stableUsb = _onUsb; usbDebounce = 0; } }
+  if (_onUsb != _stableUsb) { if (++usbDebounce >= 5) { _stableUsb = _onUsb; usbDebounce = 0; } }
   else usbDebounce = 0;
 
   bool canRotate = (displayMode == DISP_NORMAL || displayMode == DISP_INFO || displayMode == DISP_PET)
@@ -2066,7 +2068,7 @@ void loop() {
   bool clocking = displayMode == DISP_NORMAL
                && !menuOpen && !settingsOpen && !resetOpen && !inPrompt
                && tama.sessionsRunning == 0 && tama.sessionsWaiting == 0
-               && dataRtcValid() && stableUsb;
+               && dataRtcValid() && _stableUsb;
   bool canOrient = (displayMode == DISP_NORMAL || displayMode == DISP_INFO || displayMode == DISP_PET);
   if (canOrient) clockUpdateOrient();
   bool isLandscape = clockOrient == 1 || clockOrient == 3;
@@ -2079,15 +2081,16 @@ void loop() {
   static uint8_t wasOrient = 0;
   static uint32_t lastClockFlip = 0;
   bool anyLandscape = landscapeActive;
-  // Hysteresis: hold current clock/HUD state for at least 15 seconds
+  // Hysteresis: hold current clock/HUD state for at least 5s (only for USB/session fluctuations)
   bool clockChanged = clocking != wasClocking;
-  if (clockChanged && wasClocking && millis() - lastClockFlip < 5000)
+  if (clockChanged && wasClocking && millis() - lastClockFlip < 5000
+      && displayMode == DISP_NORMAL)
     clocking = true;  // stay on clock
   else if (clockChanged && !wasClocking && millis() - lastClockFlip < 5000)
     clocking = false; // stay on HUD
   if (clocking != wasClocking || anyLandscape != wasLandscape || clockOrient != wasOrient) {
     if (anyLandscape) characterSetPeek(false);
-    else if (clocking) characterSetPeek(true);
+    else if (clocking) characterSetPeek(false);
     else applyDisplayMode();
     characterInvalidate();
     if (buddyMode) buddyInvalidate();
@@ -2194,7 +2197,7 @@ void loop() {
     else            { if (faceDownFrames > -10) faceDownFrames--; }
   }
 
-  if (!napping && faceDownFrames >= 15 && !_onUsb) {
+  if (!napping && faceDownFrames >= 15 && millis() - _lastUsbMs > SCREEN_OFF_MS) {
     napping = true;
     napStartMs = now;
     M5.Display.setBrightness(13);  // ~5% brightness for nap
@@ -2206,8 +2209,9 @@ void loop() {
     wake();
   }
 
-  // Auto screen off (not on USB)
-  if (!screenOff && !inPrompt && !_onUsb
+  // Auto screen off (only when USB absent for 30s+)
+  if (!screenOff && !inPrompt
+      && millis() - _lastUsbMs > SCREEN_OFF_MS
       && millis() - lastInteractMs > SCREEN_OFF_MS) {
     M5.Display.sleep();
     screenOff = true;
