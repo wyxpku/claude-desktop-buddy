@@ -597,7 +597,9 @@ static void drawClock() {
   char hm[6]; snprintf(hm, sizeof(hm), "%02d:%02d", _clkTm.hours, _clkTm.minutes);
   char ss[4]; snprintf(ss, sizeof(ss), ":%02d", _clkTm.seconds);
   uint8_t mi = (_clkDt.month >= 1 && _clkDt.month <= 12) ? _clkDt.month - 1 : 0;
-  char dl[16]; snprintf(dl, sizeof(dl), "%s %02d", T(monIds[mi]), _clkDt.date);
+  char dl[16];
+  if (langGet() == LANG_ZH) snprintf(dl, sizeof(dl), "%s%d\xe6\x97\xa5", T(monIds[mi]), _clkDt.date);
+  else snprintf(dl, sizeof(dl), "%s %d", T(monIds[mi]), _clkDt.date);
 
   paintedOrient = 0;
   spr.fillRect(0, 90, W, H - 90, p.bg);
@@ -1475,7 +1477,9 @@ static void drawLandscapeClockInPanel() {
   char hm[6]; snprintf(hm, sizeof(hm), "%02d:%02d", _clkTm.hours, _clkTm.minutes);
   char ss[4]; snprintf(ss, sizeof(ss), ":%02d", _clkTm.seconds);
   uint8_t mi = (_clkDt.month >= 1 && _clkDt.month <= 12) ? _clkDt.month - 1 : 0;
-  char dl[16]; snprintf(dl, sizeof(dl), "%s %02d", T(monIds[mi]), _clkDt.date);
+  char dl[16];
+  if (langGet() == LANG_ZH) snprintf(dl, sizeof(dl), "%s%d\xe6\x97\xa5", T(monIds[mi]), _clkDt.date);
+  else snprintf(dl, sizeof(dl), "%s %d", T(monIds[mi]), _clkDt.date);
 
   landSpr.setTextDatum(MC_DATUM);
   landSpr.setTextSize(2); landSpr.setTextColor(p.text, p.bg);
@@ -1516,13 +1520,12 @@ static void drawLandscapeNormal(bool clocking) {
   // Right panel: clear and render text info
   landSpr.fillRect(LAND_BUDDY_W, 0, 240 - LAND_BUDDY_W, 135, p.bg);
 
-  bool clockingRight = clocking && tama.nLines == 0;
-  if (tama.promptId[0]) {
+  if (clocking) {
+    drawLandscapeClockInPanel();
+  } else if (tama.promptId[0]) {
     drawLandscapeApproval();
   } else if (tama.nLines > 0) {
     drawLandscapeHUD();
-  } else if (clockingRight) {
-    drawLandscapeClockInPanel();
   } else if (tama.msg[0]) {
     char mb[96];
     markMd(tama.msg, mb, sizeof(mb));
@@ -2074,13 +2077,21 @@ void loop() {
   static bool wasClocking = false;
   static bool wasLandscape = false;
   static uint8_t wasOrient = 0;
+  static uint32_t lastClockFlip = 0;
   bool anyLandscape = landscapeActive;
+  // Hysteresis: hold current clock/HUD state for at least 15 seconds
+  bool clockChanged = clocking != wasClocking;
+  if (clockChanged && wasClocking && millis() - lastClockFlip < 5000)
+    clocking = true;  // stay on clock
+  else if (clockChanged && !wasClocking && millis() - lastClockFlip < 5000)
+    clocking = false; // stay on HUD
   if (clocking != wasClocking || anyLandscape != wasLandscape || clockOrient != wasOrient) {
     if (anyLandscape) characterSetPeek(false);
     else if (clocking) characterSetPeek(true);
     else applyDisplayMode();
     characterInvalidate();
     if (buddyMode) buddyInvalidate();
+    if (clocking != wasClocking) lastClockFlip = millis();
     wasClocking = clocking;
     wasLandscape = anyLandscape;
     wasOrient = clockOrient;
