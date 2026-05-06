@@ -530,6 +530,7 @@ static void clockRefreshRtc() {
     return;
   }
   _rtcBadCount = 0;
+  _rtcValid = true;
   _clkTm = tm;
   _clkDt = dt;
 }
@@ -1781,14 +1782,14 @@ static void drawLandscapePasskey() {
   landSpr.setTextSize(1);
   landSpr.setTextColor(p.textDim, p.bg);
   landSpr.setTextDatum(MC_DATUM);
-  landSpr.drawString(T(S_BT_PAIRING), 120, 20);
+  landSpr.drawString(T(S_BT_PAIRING), 120, 28);
   landSpr.setTextSize(2);
   landSpr.setTextColor(p.text, p.bg);
   char b[8]; snprintf(b, sizeof(b), "%06lu", (unsigned long)blePasskey());
-  landSpr.drawString(b, 120, 55);
+  landSpr.drawString(b, 120, 63);
   landSpr.setTextSize(1);
   landSpr.setTextColor(p.textDim, p.bg);
-  landSpr.drawString(T(S_ENTER_DESKTOP), 120, 100);
+  landSpr.drawString(T(S_ENTER_DESKTOP), 120, 108);
   landSpr.setTextDatum(TL_DATUM);
 }
 
@@ -2130,10 +2131,10 @@ void loop() {
     if (hadModal && !hasModal) paintedOrient = 0;
     hadModal = hasModal;
     // Draw background page
-    if (displayMode == DISP_NORMAL) drawLandscapeNormal(clocking);
+    if (blePasskey()) drawLandscapePasskey();
+    else if (displayMode == DISP_NORMAL) drawLandscapeNormal(clocking);
     else if (displayMode == DISP_INFO) drawLandscapeInfo();
     else if (displayMode == DISP_PET) drawLandscapePet();
-    else if (blePasskey()) drawLandscapePasskey();
     // Draw modal overlay on top
     if (resetOpen || settingsOpen || menuOpen) {
       _mc = &landSpr;
