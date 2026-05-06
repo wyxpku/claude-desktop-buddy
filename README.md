@@ -55,3 +55,4 @@ Hold A → settings: brightness, sound, bluetooth (on/off + clear bonds), Wi-Fi,
 - Clawd GIF as default pet (19 species total)
 - BM8563 RTC validation to prevent garbage display
 - Bluetooth sub-menu with bond management
+- Screen stays on when USB powered (no auto-off or face-down dimming)

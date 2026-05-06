@@ -2168,7 +2168,7 @@ void loop() {
     else            { if (faceDownFrames > -10) faceDownFrames--; }
   }
 
-  if (!napping && faceDownFrames >= 15) {
+  if (!napping && faceDownFrames >= 15 && !_onUsb) {
     napping = true;
     napStartMs = now;
     M5.Display.setBrightness(13);  // ~5% brightness for nap
